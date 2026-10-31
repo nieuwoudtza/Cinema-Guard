@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- One version for the app, the core library and the Velopack release. publish.ps1 overrides it with -p:Version. -->
+    <Version>2.0.1</Version>
+    <Company>WaveBit</Company>
+    <Product>Cinema Guard</Product>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Cinema_Guard.Views.ToolsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Cinema_Guard.Controls"
+    xmlns:vm="using:Cinema_Guard.ViewModels"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="mc"
+    Background="Transparent">
+
+    <Grid Padding="24,14,24,12" RowDefinitions="Auto,*,Auto">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <StackPanel Spacing="2">
+                <TextBlock Text="Tools" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock
+                    Text="{x:Bind ViewModel.RuntimeSummary, Mode=OneWay}"
+                    Style="{StaticResource MutedStyle}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <ProgressRing
+                Grid.Column="1"
+                Width="20"
+                Height="20"
+                IsActive="{x:Bind ViewModel.IsChecking, Mode=OneWay}"
+                VerticalAlignment="Center" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8" Padding="0,0,4,16" MaxWidth="920" HorizontalAlignment="Left">
+
+                <!-- First run: one button installs everything the app needs. -->
+                <Border
+                    Style="{StaticResource CardBorderStyle}"
+                    Padding="16,12"
+                    Visibility="{x:Bind ViewModel.ShowSetupCard, Mode=OneWay}">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <FontIcon
+                                Glyph="&#xE7BA;"
+                                FontSize="20"
+                                VerticalAlignment="Top"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Set up Cinema Guard" FontWeight="SemiBold" FontSize="16" />
+                                <TextBlock
+                                    Text="Two downloads and you are ready. The recommended settings are already chosen, so there is nothing else to configure."
+                                    Style="{StaticResource MutedStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <FontIcon Glyph="&#xE714;" FontSize="14" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="1">
+                                <TextBlock Text="FFmpeg" FontWeight="SemiBold" />
+                                <TextBlock Text="Reads and writes the video. Required." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="2"
+                                Text="{x:Bind ViewModel.FfmpegState, Mode=OneWay}"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource MutedStyle}" />
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <FontIcon Glyph="&#xE8D6;" FontSize="14" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="1">
+                                <TextBlock Text="Speech model" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="Phonon 2.5 English + Phonon 2.5: the recommended pair, and it works on any PC."
+                                    Style="{StaticResource MutedStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="2"
+                                Text="{x:Bind ViewModel.ModelState, Mode=OneWay}"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource MutedStyle}" />
+                        </Grid>
+
+                        <ProgressBar
+                            Value="{x:Bind ViewModel.SetupProgress, Mode=OneWay}"
+                            IsIndeterminate="{x:Bind ViewModel.SetupIndeterminate, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
+
+                        <TextBlock
+                            Text="{x:Bind ViewModel.SetupStatus, Mode=OneWay}"
+                            Style="{StaticResource MutedStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Style="{StaticResource AccentButtonStyle}"
+                                Content="Set up Cinema Guard"
+                                Click="Setup_Click"
+                                IsEnabled="{x:Bind ViewModel.CanSetup, Mode=OneWay}" />
+                            <Button Content="Choose a different model" Click="Models_Click" />
+                        </StackPanel>
+
+                        <TextBlock
+                            Text="Already have FFmpeg 7.1 or newer on this PC? Cinema Guard uses it instead of downloading another copy."
+                            Style="{StaticResource MutedStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Tools}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ToolRow">
+                                    <Grid Padding="16,11" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <FontIcon
+                                            Glyph="{x:Bind Glyph}"
+                                            Foreground="{x:Bind Brush}"
+                                            FontSize="16"
+                                            VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" />
+                                            <TextBlock
+                                                Text="{x:Bind Location}"
+                                                Style="{StaticResource MutedStyle}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Status}" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{x:Bind Version}" Style="{StaticResource MutedStyle}" HorizontalAlignment="Right" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Button Content="Check again" Click="Recheck_Click" HorizontalAlignment="Left" />
+
+                <TextBlock Text="SHELL" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <controls:SettingRow Header="SendTo shortcut" Description="Right-click a video → Send to → Cinema Guard, exactly like the old app.">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Add" Click="AddShortcut_Click" />
+                                <Button Content="Remove" Click="RemoveShortcut_Click" />
+                            </StackPanel>
+                        </controls:SettingRow>
+
+                        <controls:SettingRow Header="Log files" Description="Every command, warning and error is written here.">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Open log folder" Click="OpenLogs_Click" />
+                                <Button Content="Settings file" Click="OpenSettingsFile_Click" />
+                            </StackPanel>
+                        </controls:SettingRow>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="IMPORT" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <controls:SettingRow
+                        Header="Import from the old Cinema Guard"
+                        Description="Select the folder holding the old Cinema Guard.exe and cg.dat. The word lists and options are read through Windows PowerShell 5.1 and saved here.">
+                        <Button Content="Import…" Click="Import_Click" />
+                    </controls:SettingRow>
+                </Border>
+
+                <TextBlock Text="ABOUT" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <controls:SettingRow
+                        Header="Cinema Guard 2"
+                        Description="Subtitles and profanity muting with Phonon-2.5. FFmpeg never re-encodes the video.">
+                        <TextBlock Text="{x:Bind ViewModel.FfmpegVersion, Mode=OneWay}" Style="{StaticResource MutedStyle}" />
+                    </controls:SettingRow>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <InfoBar
+            x:Name="StatusBar"
+            Grid.Row="2"
+            Margin="0,8,0,0"
+            IsOpen="False"
+            IsClosable="True" />
+    </Grid>
+</Page>

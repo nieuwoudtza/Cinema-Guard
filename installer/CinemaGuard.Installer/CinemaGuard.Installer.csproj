@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CinemaGuard-Setup.exe: asks where to install and whether to add a desktop shortcut, then runs the
+    Velopack setup built by publish.ps1. .NET Framework 4.8 ships with Windows, so the installer itself
+    needs nothing installed first. Build it through publish.ps1, which passes PayloadPath.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CinemaGuard-Setup</AssemblyName>
+    <ApplicationIcon>..\..\Cinema Guard\Assets\AppIcon.ico</ApplicationIcon>
+    <RootNamespace>CinemaGuard.Installer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PayloadPath)' != ''">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.exe" />
+  </ItemGroup>
+
+</Project>

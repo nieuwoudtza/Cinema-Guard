@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Cinema Guard (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Cinema Guard (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
