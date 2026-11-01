@@ -38,7 +38,7 @@
                     Style="{StaticResource AccentButtonStyle}"
                     Click="Start_Click"
                     AutomationProperties.Name="Censor"
-                    Visibility="{x:Bind ViewModel.IsRunning, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
+                    Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE768;" FontSize="14" />
                         <TextBlock Text="Censor" />
@@ -48,7 +48,7 @@
                 <Button
                     Click="Stop_Click"
                     AutomationProperties.Name="Stop"
-                    Visibility="{x:Bind ViewModel.IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE71A;" FontSize="14" />
                         <TextBlock Text="Stop" />
@@ -203,7 +203,7 @@
 
                 <ListView.ContextFlyout>
                     <!-- Works on the row right-clicked (or the selection, when that row is in it).
-                         Items tagged "idle" change the queue, so they are hidden while it runs. -->
+                         Items tagged "idle" change the queue, so they are hidden while media is being processed. -->
                     <MenuFlyout Opening="ContextMenu_Opening">
                         <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" />
                         <MenuFlyoutItem Text="Language report" Click="LanguageReport_Click" />
@@ -297,6 +297,7 @@
                                         VerticalAlignment="Center"
                                         Content="Generate subtitles"
                                         IsChecked="{x:Bind GenerateSubtitles, Mode=TwoWay}"
+                                        IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         ToolTipService.ToolTip="Transcribe this file's dialogue with the speech model when you press Censor. Off: use the subtitles it already has." />
 
                                     <CheckBox
@@ -305,6 +306,7 @@
                                         VerticalAlignment="Center"
                                         Content="Extract subtitles"
                                         IsChecked="{x:Bind ExtractSubtitles, Mode=TwoWay}"
+                                        IsEnabled="{x:Bind CanEdit, Mode=OneWay}"
                                         ToolTipService.ToolTip="Read the subtitle track inside this video and use it to find words too. Nothing is written beside the video; a video without a subtitle track carries on without one." />
 
                                     <Button

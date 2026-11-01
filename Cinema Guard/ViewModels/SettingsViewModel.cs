@@ -375,7 +375,6 @@ public sealed partial class ToolsViewModel(
     public bool CanCheck => !IsChecking;
 
     [ObservableProperty] private string _runtimeSummary = "Checking the tools…";
-    [ObservableProperty] private string _ffmpegVersion = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSetup))]
@@ -427,7 +426,6 @@ public sealed partial class ToolsViewModel(
                 Tools.FirstOrDefault(row => row.Key == tool.Key)?.Show(tool, ReadyBrush(tool.Ready));
 
             var ffmpeg = snapshot.Tools.First(t => t.Key == "ffmpeg");
-            FfmpegVersion = ffmpeg.Version ?? string.Empty;
             FfmpegMissing = !ffmpeg.Ready;
             FfmpegState = ffmpeg.Ready ? "Ready" : ffmpeg.Problem ?? "Not installed";
 

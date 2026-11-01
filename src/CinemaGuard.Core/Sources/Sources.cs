@@ -79,7 +79,12 @@ public sealed class EmbeddedSubtitleExtractor(IProcessRunner runner)
             new ProcessSpec(ffmpegPath, FfmpegCommands.ExtractSubtitle(probe.Path, stream.Index, targetPath)),
             cancellationToken: cancellationToken);
 
-        if (result.Cancelled) throw new OperationCanceledException(cancellationToken);
+        if (result.Cancelled)
+        {
+            // FFmpeg was stopped part-way: never leave a half-written .srt beside the video.
+            try { File.Delete(targetPath); } catch { /* best effort */ }
+            throw new OperationCanceledException(cancellationToken);
+        }
 
         if (!result.Success || !File.Exists(targetPath))
         {

@@ -90,7 +90,7 @@ public sealed partial class QueuePage : Page
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsRunning)) UpdateSelectionBar();
+        if (e.PropertyName == nameof(MainViewModel.IsBusy)) UpdateSelectionBar();
     }
 
     /// <summary>The subtitle buttons work on the selected files only, so they are off until something is selected.</summary>
@@ -105,8 +105,8 @@ public sealed partial class QueuePage : Page
         RemoveSelectedButton.IsEnabled = selected > 0;
         ClearButton.IsEnabled = total > 0;
 
-        // These also do nothing while the queue runs.
-        GenerateButton.IsEnabled = ExtractButton.IsEnabled = DownloadButton.IsEnabled = selected > 0 && !ViewModel.IsRunning;
+        // These also do nothing while the queue or a subtitle action runs.
+        GenerateButton.IsEnabled = ExtractButton.IsEnabled = DownloadButton.IsEnabled = selected > 0 && !ViewModel.IsBusy;
     }
 
     // ---------------------------------------------------------------- context menu
@@ -147,12 +147,12 @@ public sealed partial class QueuePage : Page
         return [_contextRow];
     }
 
-    /// <summary>While the queue runs, only the read-only items (Peek, Language report, Open folder) are offered.</summary>
+    /// <summary>While media is being processed, only the read-only items (Peek, Language report, Open folder) and Remove are offered.</summary>
     private void ContextMenu_Opening(object? sender, object e)
     {
         if (sender is not MenuFlyout menu) return;
 
-        var visibility = ViewModel.IsRunning ? Visibility.Collapsed : Visibility.Visible;
+        var visibility = ViewModel.IsBusy ? Visibility.Collapsed : Visibility.Visible;
         foreach (var item in menu.Items)
         {
             if (item.Tag as string == "idle") item.Visibility = visibility;
@@ -208,6 +208,8 @@ public sealed partial class QueuePage : Page
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsBusy) return;
+
         // A model that still has to be downloaded is offered here instead of failing every file.
         if (ViewModel.MissingSpeechModel() is { } missing)
         {

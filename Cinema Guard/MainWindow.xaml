@@ -17,9 +17,6 @@
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <Image Source="ms-appx:///Assets/AppIcon.png" Width="18" Height="18" />
                 <TextBlock Text="Cinema Guard" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,0" VerticalAlignment="Center">
-                    <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
-                </Border>
             </StackPanel>
         </Grid>
 

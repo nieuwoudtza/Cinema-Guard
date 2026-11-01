@@ -200,15 +200,6 @@
                         <Button Content="Import…" Click="Import_Click" />
                     </controls:SettingRow>
                 </Border>
-
-                <TextBlock Text="ABOUT" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <controls:SettingRow
-                        Header="Cinema Guard 2"
-                        Description="Subtitles and profanity muting with Phonon-2.5. FFmpeg never re-encodes the video.">
-                        <TextBlock Text="{x:Bind ViewModel.FfmpegVersion, Mode=OneWay}" Style="{StaticResource MutedStyle}" />
-                    </controls:SettingRow>
-                </Border>
             </StackPanel>
         </ScrollViewer>
 

@@ -1,4 +1,4 @@
-# Cinema Guard 2
+# Cinema Guard
 
 Mutes filtered words in a film by writing a new file next to it. Speech comes from a model you pick
 on the **Models** page; FFmpeg does the audio. The video is never re-encoded.

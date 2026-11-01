@@ -1,6 +1,6 @@
 # Cinema Guard parity run — 31 October / 1 November 2026
 
-The old WinForms app and Cinema Guard 2 were run side by side on three real films, on separate copies
+The old WinForms app and the new Cinema Guard were run side by side on three real films, on separate copies
 of the same files, with the same word lists and subtitle source. This is the Phase 14 check from
 `cinema-guard-winui-upgrade.md`.
 

@@ -125,7 +125,22 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>"37% overall · file 2 of 5" in the footer while the queue runs; empty otherwise.</summary>
     [ObservableProperty] private string _overallProgressText = string.Empty;
 
-    [ObservableProperty] private bool _isRunning;
+    /// <summary>The censor queue is running.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
+    private bool _isRunning;
+
+    /// <summary>Save subtitles as .srt or Download subtitles is working through files.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
+    private bool _isSubtitleTaskRunning;
+
+    /// <summary>
+    /// Media is being processed, by the queue or a subtitle action: Stop shows instead of Censor, and
+    /// nothing else that reads or writes the files may start until it ends.
+    /// </summary>
+    public bool IsBusy => IsRunning || IsSubtitleTaskRunning;
+
     [ObservableProperty] private bool _isEmpty = true;
     [ObservableProperty] private string _queueSummaryText = "No files queued";
     [ObservableProperty] private string _elapsedText = string.Empty;
@@ -133,8 +148,6 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _summaryTitle = string.Empty;
     [ObservableProperty] private string _summaryMessage = string.Empty;
     [ObservableProperty] private InfoBarSeverity _summarySeverity = InfoBarSeverity.Informational;
-
-    public string Version => $"v{CoreInfo.Version}";
 
     // ---------------------------------------------------------------- queue
 
@@ -248,7 +261,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public void SetGenerateMode(GenerateMode mode, IEnumerable<MediaItemViewModel>? targets = null)
     {
-        if (IsRunning) return;
+        if (IsBusy) return;
 
         foreach (var item in targets ?? Items)
         {
@@ -264,6 +277,12 @@ public sealed partial class MainViewModel : ObservableObject
     public void SetCustomSubtitle(MediaItemViewModel item, string path)
     {
         if (!File.Exists(path) || !FileTypes.IsSupportedSubtitle(Path.GetExtension(path))) return;
+
+        if (IsBusy)
+        {
+            ShowSummary("Busy", "Wait for the files being processed to finish, or press Stop, before choosing subtitles.", InfoBarSeverity.Warning);
+            return;
+        }
 
         item.Item.CustomSubtitlePath = path;
         item.Item.SubtitleSource = "Selected file";
@@ -287,7 +306,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public async Task StartAsync()
     {
-        if (IsRunning) return;
+        if (IsBusy) return;
 
         if (Items.Count == 0)
         {
@@ -328,7 +347,9 @@ public sealed partial class MainViewModel : ObservableObject
 
             var token = _cancellation.Token;
 
-            var summary = await Task.Run(() => _queueRunner.RunAsync(TakeNext, Settings, token), token);
+            // A copy, so editing the filter or settings mid-run never changes a file halfway through.
+            var settings = Settings.Clone();
+            var summary = await Task.Run(() => _queueRunner.RunAsync(TakeNext, settings, token), token);
 
             StatusText = summary.Describe();
             ShowSummary(
@@ -359,12 +380,29 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Stops the queue, or the subtitle action that is running.</summary>
     public void Stop()
     {
-        if (!IsRunning) return;
+        if (!IsBusy) return;
 
         StatusText = "Stopping…";
         _cancellation?.Cancel();
+    }
+
+    /// <summary>Marks a subtitle action as running, so Stop shows and nothing else can start alongside it.</summary>
+    private CancellationToken BeginSubtitleTask()
+    {
+        IsSubtitleTaskRunning = true;
+        IsSummaryOpen = false;
+        _cancellation = new CancellationTokenSource();
+        return _cancellation.Token;
+    }
+
+    private void EndSubtitleTask()
+    {
+        _cancellation?.Dispose();
+        _cancellation = null;
+        IsSubtitleTaskRunning = false;
     }
 
     // ---------------------------------------------------------------- subtitle actions
@@ -372,7 +410,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Extracts an embedded text track to &lt;name&gt;.srt (never overwriting an existing one).</summary>
     public async Task ExtractSubtitlesAsync(IEnumerable<MediaItemViewModel> targets)
     {
-        if (IsRunning) return;
+        if (IsBusy) return;
 
         var ffmpeg = _locator.ResolveFfmpeg(Settings);
         var ffprobe = _locator.ResolveFfprobe(Settings);
@@ -383,56 +421,107 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var token = BeginSubtitleTask();
         var extracted = 0;
         var attempted = 0;
+        var cancelled = false;
 
-        foreach (var target in targets)
+        try
         {
-            attempted++;
-            var item = target.Item;
-            item.StatusText = "Extracting subtitles";
-            target.Sync();
-
-            try
+            foreach (var target in targets.ToList())
             {
-                var probeResult = await _runner.RunAsync(new ProcessSpec(ffprobe, FfmpegCommands.Probe(item.InputPath)));
-                if (!probeResult.Success) throw new Exception("FFprobe could not read the file.");
+                // A file taken off the queue meanwhile is left alone.
+                if (!Items.Contains(target)) continue;
 
-                var probe = MediaProbeParser.Parse(probeResult.StdOut, item.InputPath);
-                var stream = StreamSelector.SelectSubtitle(probe, Settings.PreferredLanguage, out var reason)
-                             ?? throw new Exception(reason ?? "No text subtitle track was found.");
+                cancelled = token.IsCancellationRequested;
+                if (cancelled) break;
 
-                var targetPath = File.Exists(item.SidecarPath)
-                    ? Path.Combine(item.Folder, $"{item.Stem}.{stream.Language ?? "eng"}.srt")
-                    : item.SidecarPath;
+                attempted++;
+                var item = target.Item;
+                item.StatusText = "Extracting subtitles";
+                item.Message = null;
+                target.IsWorking = true;
 
-                var path = await _extractor.ExtractAsync(ffmpeg, probe, stream, targetPath, CancellationToken.None);
+                try
+                {
+                    var probeResult = await _runner.RunAsync(new ProcessSpec(ffprobe, FfmpegCommands.Probe(item.InputPath)), cancellationToken: token);
+                    if (probeResult.Cancelled) throw new OperationCanceledException(token);
+                    if (!probeResult.Success) throw new Exception("FFprobe could not read the file.");
 
-                if (path is null) throw new Exception("FFmpeg could not extract the track.");
+                    var probe = MediaProbeParser.Parse(probeResult.StdOut, item.InputPath);
+                    var stream = StreamSelector.SelectSubtitle(probe, Settings.PreferredLanguage, out var reason)
+                                 ?? throw new Exception(reason ?? "No text subtitle track was found.");
 
-                item.CustomSubtitlePath = path;
-                item.SubtitleSource = "Embedded";
-                item.StatusText = "Subtitles saved";
-                item.Message = Path.GetFileName(path);
-                target.GenerateSubtitles = false;
-                extracted++;
+                    var targetPath = FreeSubtitlePath(item, stream.Language);
+
+                    var path = await _extractor.ExtractAsync(ffmpeg, probe, stream, targetPath, token);
+
+                    if (path is null) throw new Exception("FFmpeg could not extract the track.");
+
+                    item.CustomSubtitlePath = path;
+                    item.SubtitleSource = "Embedded";
+                    item.StatusText = "Subtitles saved";
+                    item.Message = Path.GetFileName(path);
+                    target.GenerateSubtitles = false;
+                    extracted++;
+                }
+                catch (OperationCanceledException)
+                {
+                    item.StatusText = "Cancelled";
+                    cancelled = true;
+                }
+                catch (Exception ex)
+                {
+                    item.StatusText = "Could not save the subtitles";
+                    item.Message = ex.Message;
+                    Log.Warn($"{item.Stem}: {ex.Message}");
+                }
+                finally
+                {
+                    target.IsWorking = false;
+                }
+
+                if (cancelled) break;
             }
-            catch (Exception ex)
-            {
-                item.StatusText = "Could not save the subtitles";
-                item.Message = ex.Message;
-                Log.Warn($"{item.Stem}: {ex.Message}");
-            }
 
-            target.Sync();
+            // Stop pressed as the last file finished still reports as stopped.
+            cancelled |= token.IsCancellationRequested;
+        }
+        finally
+        {
+            EndSubtitleTask();
+        }
+
+        if (cancelled)
+        {
+            StatusText = "Cancelled";
+            ShowSummary("Cancelled", $"Saving subtitles was stopped; {extracted}/{attempted} saved beside the video.", InfoBarSeverity.Warning);
+            return;
         }
 
         ShowSummary("Save subtitles as .srt", $"{extracted}/{attempted} saved beside the video.", extracted == attempted ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
 
+    /// <summary>
+    /// &lt;name&gt;.srt, else &lt;name&gt;.eng.srt, else &lt;name&gt;.eng.2.srt and so on: the first name not
+    /// taken, so saving a track never replaces a subtitle file already beside the video.
+    /// </summary>
+    private static string FreeSubtitlePath(MediaItem item, string? language)
+    {
+        if (!File.Exists(item.SidecarPath)) return item.SidecarPath;
+
+        var tag = string.IsNullOrWhiteSpace(language) ? "eng" : language;
+        var path = Path.Combine(item.Folder, $"{item.Stem}.{tag}.srt");
+
+        for (var copy = 2; File.Exists(path); copy++)
+            path = Path.Combine(item.Folder, $"{item.Stem}.{tag}.{copy}.srt");
+
+        return path;
+    }
+
     public async Task DownloadSubtitlesAsync(IEnumerable<MediaItemViewModel> targets)
     {
-        if (IsRunning) return;
+        if (IsBusy) return;
 
         var subloader = _locator.ResolveSubloader(Settings);
 
@@ -442,46 +531,82 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var token = BeginSubtitleTask();
         var downloaded = 0;
         var attempted = 0;
         var quota = false;
+        var cancelled = false;
 
-        foreach (var target in targets)
+        try
         {
-            if (quota) break;
-
-            attempted++;
-            var item = target.Item;
-            item.StatusText = "Downloading subtitles";
-            target.Sync();
-
-            try
+            foreach (var target in targets.ToList())
             {
-                var result = await _subloader.DownloadAsync(subloader, item.InputPath, Settings.PreferredLanguage, CancellationToken.None);
-                quota = result.QuotaReached;
+                if (quota) break;
 
-                if (result.Success && result.SubtitlePath is not null)
+                // A file taken off the queue meanwhile is left alone.
+                if (!Items.Contains(target)) continue;
+
+                cancelled = token.IsCancellationRequested;
+                if (cancelled) break;
+
+                attempted++;
+                var item = target.Item;
+                item.StatusText = "Downloading subtitles";
+                item.Message = null;
+                target.IsWorking = true;
+
+                try
                 {
-                    item.CustomSubtitlePath = result.SubtitlePath;
-                    item.SubtitleSource = "Downloaded";
-                    item.GenerateSubtitles = false;
-                    item.StatusText = "Subtitles downloaded";
-                    item.Message = Path.GetFileName(result.SubtitlePath);
-                    downloaded++;
+                    var result = await _subloader.DownloadAsync(subloader, item.InputPath, Settings.PreferredLanguage, token);
+                    quota = result.QuotaReached;
+
+                    if (result.Success && result.SubtitlePath is not null)
+                    {
+                        item.CustomSubtitlePath = result.SubtitlePath;
+                        item.SubtitleSource = "Downloaded";
+                        target.GenerateSubtitles = false;
+                        item.StatusText = "Subtitles downloaded";
+                        item.Message = Path.GetFileName(result.SubtitlePath);
+                        downloaded++;
+                    }
+                    else
+                    {
+                        item.StatusText = "Download failed";
+                        item.Message = result.Message;
+                    }
                 }
-                else
+                catch (OperationCanceledException)
+                {
+                    item.StatusText = "Cancelled";
+                    cancelled = true;
+                }
+                catch (Exception ex)
                 {
                     item.StatusText = "Download failed";
-                    item.Message = result.Message;
+                    item.Message = ex.Message;
+                    Log.Warn($"{item.Stem}: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                item.StatusText = "Download failed";
-                item.Message = ex.Message;
+                finally
+                {
+                    target.IsWorking = false;
+                }
+
+                if (cancelled) break;
             }
 
-            target.Sync();
+            // Stop pressed as the last file finished still reports as stopped.
+            cancelled |= token.IsCancellationRequested;
+        }
+        finally
+        {
+            EndSubtitleTask();
+        }
+
+        if (cancelled)
+        {
+            StatusText = "Cancelled";
+            ShowSummary("Cancelled", $"Downloading subtitles was stopped; {downloaded}/{attempted} downloaded.", InfoBarSeverity.Warning);
+            return;
         }
 
         ShowSummary(

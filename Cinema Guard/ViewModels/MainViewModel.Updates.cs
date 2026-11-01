@@ -14,11 +14,15 @@ public sealed partial class MainViewModel
     [ObservableProperty] private bool _isUpdateReady;
     [ObservableProperty] private string _updateMessage = string.Empty;
 
-    public bool CanRestartToUpdate => IsUpdateReady && !IsRunning;
+    public bool CanRestartToUpdate => IsUpdateReady && !IsBusy;
 
     partial void OnIsUpdateReadyChanged(bool value) => OnPropertyChanged(nameof(CanRestartToUpdate));
 
-    partial void OnIsRunningChanged(bool value)
+    partial void OnIsRunningChanged(bool value) => OnBusyChanged();
+
+    partial void OnIsSubtitleTaskRunningChanged(bool value) => OnBusyChanged();
+
+    private void OnBusyChanged()
     {
         OnPropertyChanged(nameof(CanRestartToUpdate));
         if (IsUpdateReady) UpdateMessage = DescribeUpdate();
@@ -56,7 +60,7 @@ public sealed partial class MainViewModel
     /// <summary>Called when the window closes: a ready update installs after the app exits.</summary>
     public void ApplyUpdateOnExit() => _updates.ApplyOnExit();
 
-    private string DescribeUpdate() => IsRunning
-        ? $"Version {_updates.ReadyVersion} is ready. It installs when the queue is done and you restart, or when you close Cinema Guard."
+    private string DescribeUpdate() => IsBusy
+        ? $"Version {_updates.ReadyVersion} is ready. It installs when the files being processed are done and you restart, or when you close Cinema Guard."
         : $"Version {_updates.ReadyVersion} is ready. Restart to install it, or it installs when you close Cinema Guard.";
 }

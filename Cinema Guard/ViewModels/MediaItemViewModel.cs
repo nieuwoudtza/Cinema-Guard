@@ -79,6 +79,23 @@ public sealed partial class MediaItemViewModel : ObservableObject
     /// <summary>Mirrors the row's selection in the queue list, for the tick box inside the card.</summary>
     [ObservableProperty] private bool _isSelected;
 
+    /// <summary>The row's tick boxes, off while this file is being censored or its subtitles saved or downloaded.</summary>
+    [ObservableProperty] private bool _canEdit = true;
+
+    private bool _isWorking;
+
+    /// <summary>Save subtitles as .srt or Download subtitles is working on this file.</summary>
+    public bool IsWorking
+    {
+        get => _isWorking;
+        set
+        {
+            if (_isWorking == value) return;
+            _isWorking = value;
+            Sync();
+        }
+    }
+
     public bool HasHits => HitCount > 0;
 
     /// <summary>The full detail on hover (the row trims it); null when there is none, so no empty tooltip shows.</summary>
@@ -97,9 +114,10 @@ public sealed partial class MediaItemViewModel : ObservableObject
         Progress = Item.Progress;
 
         var running = Item.Status == MediaStatus.Running;
-        IsIndeterminate = running && Item.Progress <= 0.1;
-        ProgressVisibility = running ? Visibility.Visible : Visibility.Collapsed;
+        IsIndeterminate = (running && Item.Progress <= 0.1) || _isWorking;
+        ProgressVisibility = running || _isWorking ? Visibility.Visible : Visibility.Collapsed;
         ProgressText = running && !IsIndeterminate ? $"{Math.Floor(Item.Progress):0}%" : string.Empty;
+        CanEdit = !running && !_isWorking;
         RefreshElapsed();
 
         SourceBadge = string.IsNullOrWhiteSpace(Item.SubtitleSource) || Item.SubtitleSource == "None"
