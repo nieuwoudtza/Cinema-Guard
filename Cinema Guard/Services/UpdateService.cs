@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using CinemaGuard.Core.Logging;
+using CinemaGuard.Core.Pipeline;
 using Velopack;
 
 namespace Cinema_Guard.Services;
@@ -55,19 +56,38 @@ public sealed class UpdateService
         return ReadyVersion;
     }
 
-    /// <summary>Exits, installs the ready release and starts it again.</summary>
-    public void RestartAndApply()
+    /// <summary>
+    /// Exits, installs the ready release and starts it again. False, and nothing happens, while a
+    /// headless run (another program's) is working from the installed folder.
+    /// </summary>
+    public bool RestartAndApply()
     {
-        if (_ready is null) return;
+        if (_ready is null) return false;
+
+        if (HeadlessRuns.AnyActive())
+        {
+            Log.Info($"Update {ReadyVersion} waits: a headless run is in progress.");
+            return false;
+        }
 
         Log.Info($"Restarting to install {ReadyVersion}.");
         _manager.ApplyUpdatesAndRestart(_ready);
+        return true;
     }
 
-    /// <summary>On close: install the ready release once this process has exited, without relaunching.</summary>
+    /// <summary>
+    /// On close: install the ready release once this process has exited, without relaunching. Left for
+    /// the next start while a headless run is working from the installed folder.
+    /// </summary>
     public void ApplyOnExit()
     {
         if (_ready is null) return;
+
+        if (HeadlessRuns.AnyActive())
+        {
+            Log.Info($"Update {ReadyVersion} waits for the next start: a headless run is in progress.");
+            return;
+        }
 
         try
         {

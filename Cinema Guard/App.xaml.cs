@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using CinemaGuard.Core.Logging;
@@ -10,6 +9,7 @@ using CinemaGuard.Core.Media;
 using CinemaGuard.Core.Pipeline;
 using CinemaGuard.Core.Settings;
 using CinemaGuard.Core.Speech;
+using CinemaGuard.Core.Tools;
 using Cinema_Guard.Services;
 using Cinema_Guard.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +45,7 @@ public partial class App : Application
         Log.Init();
         Log.Info($"Launch: {Environment.CommandLine}");
 
-        var commandLine = CommandLineArguments.Parse(Environment.GetCommandLineArgs().Skip(1));
+        var commandLine = LaunchArguments.Parse(Environment.GetCommandLineArgs().Skip(1));
 
         Services = AppServices.Build();
         Settings = Services.GetRequiredService<SettingsService>();
@@ -90,19 +90,35 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// `Cinema Guard.exe "file" -start` — no window, no dialogs, exit code 0 like the old app.
-    /// The per-file outcome is written to last-run.json for the caller to inspect.
+    /// `Cinema Guard.exe "file" -start` — no window, no dialogs. The per-file outcome is written to
+    /// last-run.json (and the --report path), the exit code sums it up (see <see cref="HeadlessExitCodes"/>),
+    /// --progress writes JSON lines to stdout and --cancel-event lets the caller stop the run cleanly.
     /// </summary>
-    private void RunHeadless(CommandLineArguments arguments)
+    private void RunHeadless(LaunchArguments arguments)
     {
         IsHeadless = true;
+        RecycleBin.ShowErrorDialogs = false;
+
+        // Held to the end, so a window that closes meanwhile does not install an update under this run.
+        var running = HeadlessRuns.Enter();
+        var cancellation = new CancellationTokenSource();
+        var cancelEvent = HeadlessCancellation.Watch(arguments.CancelEvent, cancellation);
+
+        if (arguments.Progress)
+        {
+            var stdout = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            var progress = new HeadlessProgress(stdout);
+            Services.GetRequiredService<CensorPipeline>().ItemChanged += progress.Report;
+        }
 
         _ = Task.Run(async () =>
         {
+            var items = new List<MediaItem>();
+            var exitCode = HeadlessExitCodes.Crashed;
+
             try
             {
                 var settings = Settings.Current;
-                var items = new List<MediaItem>();
 
                 foreach (var path in arguments.Paths)
                 {
@@ -134,25 +150,31 @@ public partial class App : Application
                 if (items.Count > 0)
                 {
                     var runner = Services.GetRequiredService<QueueRunner>();
-                    var summary = await runner.RunAsync(items, settings, CancellationToken.None);
+                    var summary = await runner.RunAsync(items, settings, cancellation.Token);
 
-                    WriteLastRun(items, summary.Elapsed, summary.Describe());
-                    Log.Info($"Headless run: {summary.Describe()}");
+                    exitCode = HeadlessExitCodes.For(summary);
+                    HeadlessReport.Write(items, summary.Elapsed, summary.Describe(), exitCode, arguments.ReportPath);
+                    Log.Info($"Headless run: {summary.Describe()} (exit code {exitCode})");
                 }
                 else
                 {
                     // Still replace last-run.json, so a caller never reads the previous run's result.
-                    WriteLastRun(items, TimeSpan.Zero, "No video files in the arguments.");
+                    exitCode = HeadlessExitCodes.NoFiles;
+                    HeadlessReport.Write(items, TimeSpan.Zero, "No video files in the arguments.", exitCode, arguments.ReportPath);
                     Log.Info("Headless run: no video files in the arguments.");
                 }
             }
             catch (Exception ex)
             {
                 Log.Error("The headless run failed", ex);
+                exitCode = HeadlessExitCodes.Crashed;
+                HeadlessReport.Write(items, TimeSpan.Zero, $"The run failed: {ex.Message}", exitCode, arguments.ReportPath);
             }
             finally
             {
-                Environment.Exit(0);
+                cancelEvent.Dispose();
+                running.Dispose();
+                Environment.Exit(exitCode);
             }
         });
     }
@@ -170,34 +192,5 @@ public partial class App : Application
                !File.Exists(item.GeneratedPath) &&
                !File.Exists(item.OneWordPath) &&
                !item.HasAnyTranscriptCache;
-    }
-
-    private static void WriteLastRun(IReadOnlyList<MediaItem> items, TimeSpan elapsed, string summary)
-    {
-        try
-        {
-            var path = Path.Combine(Log.Directory, "last-run.json");
-
-            var payload = new
-            {
-                finishedAt = DateTimeOffset.Now,
-                elapsedSeconds = Math.Round(elapsed.TotalSeconds, 1),
-                summary,
-                files = items.Select(item => new
-                {
-                    input = item.InputPath,
-                    status = item.Status.ToString(),
-                    message = item.Message,
-                    output = item.OutputPath,
-                    hits = item.HitCount,
-                }),
-            };
-
-            File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"Could not write last-run.json: {ex.Message}");
-        }
     }
 }

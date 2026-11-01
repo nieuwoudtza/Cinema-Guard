@@ -1,4 +1,5 @@
 using System;
+using CinemaGuard.Core.Pipeline;
 using CinemaGuard.Core.Speech;
 using Velopack;
 
@@ -18,7 +19,10 @@ public static class Program
         }
 
         // Install, update and uninstall hooks run here and exit the process; a normal launch returns at once.
-        VelopackApp.Build().Run();
+        // A downloaded update is installed on startup too, which would end a headless run with no result,
+        // or replace the folder another headless run is working from; those launches leave it for later.
+        var deferUpdate = LaunchArguments.Parse(args).Headless || HeadlessRuns.AnyActive();
+        VelopackApp.Build().SetAutoApplyOnStartup(!deferUpdate).Run();
 
         XamlGeneratedProgram.XamlGeneratedMain();
     }

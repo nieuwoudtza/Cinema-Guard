@@ -8,29 +8,6 @@ using CinemaGuard.Core.Tools;
 
 namespace Cinema_Guard.Services;
 
-public sealed record CommandLineArguments(bool Headless, IReadOnlyList<string> Paths)
-{
-    public static CommandLineArguments Parse(IEnumerable<string> arguments)
-    {
-        var paths = new List<string>();
-        var headless = false;
-
-        foreach (var argument in arguments)
-        {
-            if (string.Equals(argument, "-start", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(argument, "--start", StringComparison.OrdinalIgnoreCase))
-            {
-                headless = true;
-                continue;
-            }
-
-            paths.Add(argument);
-        }
-
-        return new CommandLineArguments(headless, paths);
-    }
-}
-
 /// <summary>The SendTo shortcut: created and removed through the Windows shell, no COM interop in-process.</summary>
 public static class ShellIntegration
 {

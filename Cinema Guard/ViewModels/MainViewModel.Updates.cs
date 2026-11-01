@@ -54,7 +54,8 @@ public sealed partial class MainViewModel
 
     public void RestartToUpdate()
     {
-        if (CanRestartToUpdate) _updates.RestartAndApply();
+        if (CanRestartToUpdate && !_updates.RestartAndApply())
+            UpdateMessage = $"Version {_updates.ReadyVersion} is ready. Another program is using Cinema Guard in the background; restart once it is done.";
     }
 
     /// <summary>Called when the window closes: a ready update installs after the app exits.</summary>

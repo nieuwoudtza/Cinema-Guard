@@ -11,7 +11,7 @@ This is the WinUI 3 replacement for the old WinForms app in `..\Cinema Guard (Ol
 |---|---|
 | `Cinema Guard/` | WinUI 3 app (unpackaged, x64) |
 | `src/CinemaGuard.Core/` | All logic: subtitles, speech engines, FFmpeg, pipeline. No UI. |
-| `tests/CinemaGuard.Core.Tests/` | xUnit tests (103) |
+| `tests/CinemaGuard.Core.Tests/` | xUnit tests (170) |
 | `installer/CinemaGuard.Installer/` | `CinemaGuard-Setup.exe`: folder choice, desktop shortcut, then Velopack install |
 | `publish.ps1` | Builds a release for the WaveBit update server |
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
@@ -86,12 +86,30 @@ from the Models page. The first run asks whether to download the recommended pai
 
 ```
 Cinema Guard.exe "D:\Films\Heat (1995).mkv"          # opens the queue with the file
-Cinema Guard.exe "D:\Films\Heat (1995).mkv" -start   # headless run, no window, exit code 0
+Cinema Guard.exe "D:\Films\Heat (1995).mkv" -start   # headless run, no window, no dialogs
 ```
 
 `-start` writes `%LOCALAPPDATA%\CinemaGuard\logs\last-run.json` with the result of every file. This
 is the mode to call from another program (MediaPilot, for example). A second GUI launch hands its
 paths to the running window instead of starting again.
+
+A headless run also takes these options:
+
+| Option | What it does |
+|---|---|
+| `--report <path>` | Writes the same report to `<path>` as well (written to a temp file and moved in, so a reader never sees half of it) |
+| `--progress` | One JSON line on stdout per change of step or whole percent, at most one a second, plus every status change: `{"file":"…","status":"Running","step":"Encoding","progress":42.5}` |
+| `--cancel-event <name>` | Stops the run when the caller signals this named event (`Local\…`). The file being worked on is cancelled cleanly, so no `.partial` output is left behind |
+
+Its exit code: `0` every file succeeded or was skipped, `1` at least one failed or was cancelled,
+`2` no video files in the arguments, `3` the run itself crashed (see the log). The report carries the
+same `exitCode`.
+
+While a headless run is alive, the window does not install a downloaded update (on restart, on close
+or at startup), because that replaces the folder the run executes from; the update waits for the
+next start. A headless launch never installs one either.
+
+Older builds treat these options as paths that do not exist and ignore them, and always exit with 0.
 
 ## What it needs
 
