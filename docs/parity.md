@@ -1,16 +1,18 @@
 # Cinema Guard parity run — 31 October / 1 November 2026
 
 The old WinForms app and the new Cinema Guard were run side by side on three real films, on separate copies
-of the same files, with the same word lists and subtitle source. This is the Phase 14 check from
-`cinema-guard-winui-upgrade.md`.
+of the same files, with the same word lists and subtitle source. This is the Phase 14 check from the upgrade
+plan.
 
 ## Test files
 
+The three films are referred to as A, B and C. Their titles do not matter to any of the numbers below.
+
 | Film | Length | Size | Video | Audio | Subtitles used |
 |---|---|---|---|---|---|
-| Apocalypse Z: New World (2026) | 98.1 min | 1.86 GB | HEVC 1920×800 | E-AC3 5.1(side), Spanish first, English second | English full track (stream 7), extracted to `.srt` |
-| Matchbox The Movie (2026) | 126.1 min | 2.11 GB | HEVC 1920×804 | AAC 5.1 | English full embedded track (stream 2), extracted to `.srt` |
-| Spider-Man: Brand New Day (2026) | 145.0 min | 2.67 GB | H.264 1920×800 | AAC 5.1 | The release's English `.srt` (1,777 cues) |
+| A | 98.1 min | 1.86 GB | HEVC 1920×800 | E-AC3 5.1(side), Spanish first, English second | English full track (stream 7), extracted to `.srt` |
+| B | 126.1 min | 2.11 GB | HEVC 1920×804 | AAC 5.1 | English full embedded track (stream 2), extracted to `.srt` |
+| C | 145.0 min | 2.67 GB | H.264 1920×800 | AAC 5.1 | An English `.srt` for the same file (1,777 cues) |
 
 There was no stereo copy; all three are 5.1. That is the better test for this app, and no stereo file
 is needed.
@@ -31,22 +33,22 @@ Each app read the same English `.srt`, so this isolates the matching, mute and e
 
 | Film | Old app | New app |
 |---|---|---|
-| Apocalypse Z | 0:57 | 0:40 |
-| Matchbox | 4:38 | 4:45 |
-| Spider-Man | 5:11 | 4:27 |
+| A | 0:57 | 0:40 |
+| B | 4:38 | 4:45 |
+| C | 5:11 | 4:27 |
 | **Total** | **10:46** | **9:52** |
 
 Per-film times are from the output completion times; the totals were measured with the stopwatch.
-The new app was **8.4 % faster overall**, and the one film where it was slightly slower (Matchbox) is
+The new app was **8.4 % faster overall**, and the one film where it was slightly slower (B) is
 the one where it wrote a faithful AAC track instead of the old app's smaller Vorbis one.
 
 ### Hits and subtitles
 
 | Film | Old visible hit cues | New hit cues | New hit words / ranges |
 |---|---|---|---|
-| Apocalypse Z | 14 | 17 | 17 / 17 |
-| Matchbox | 48 | 53 | 63 / 53 |
-| Spider-Man | 16 | 21 | 34 / 21 |
+| A | 14 | 17 | 17 / 17 |
+| B | 48 | 53 | 63 / 53 |
+| C | 16 | 21 | 34 / 21 |
 
 The visible-cue gap is **not** missed words. The old app's saved `CensorCharacter` is a **space**, so
 a mask at the start or end of a cue disappears when the subtitle is written (and FFmpeg trims it).
@@ -72,7 +74,7 @@ for this run was made before the workaround was restored, so its Censored track 
 the hit cues; the final build writes all of them, with a non-breaking space (U+00A0) for the clean
 ones. The hit cues, mute ranges and audio are unchanged.
 
-## Pass 2 — full transcription on Matchbox
+## Pass 2 — full transcription on film B
 
 No shortcut here: both apps transcribed the 126-minute film themselves and then merged their
 transcript with the same English sidecar.
@@ -100,7 +102,7 @@ cues over the reading-speed limit.
 
 ### Generated subtitle accuracy (quick check)
 
-Reference: the extracted English Matchbox subtitle (1,616 cues, **9,535 words**). A word counts as
+Reference: the extracted English subtitle for film B (1,616 cues, **9,535 words**). A word counts as
 matched when the same normalised word appears in the model's transcript within **±2 seconds** of the
 reference cue word (reference word times are interpolated across each cue, because the subtitle has
 cue-level timing only). This is a lexical comparison, not a true verbatim WER.
@@ -135,13 +137,13 @@ score. A true WER needs a human-verified transcript.
 
 The old app's audio output is the weakest part of the comparison:
 
-- **AAC sources became Vorbis.** Matchbox and Spider-Man (AAC 5.1) were re-encoded to Vorbis 5.1 by
+- **AAC sources became Vorbis.** B and C (AAC 5.1) were re-encoded to Vorbis 5.1 by
   the old app; the new app keeps AAC 5.1.
-- **Channel layout was broken.** On a 10-second dialogue segment of Matchbox, the new app's six
+- **Channel layout was broken.** On a 10-second dialogue segment of B, the new app's six
   output channels correlate **1.000, 1.000, 1.000, 0.999, 1.000, 1.000** with the source channels.
   The old app's diagonal correlations are **0.05, −0.11, −0.11, −0.40, −0.10, −0.23** — the mix is
   not a faithful copy of any source channel.
-- **Dual-audio film: the old app muted the Spanish track.** Apocalypse Z has Spanish as audio 1 and
+- **Dual-audio film: the old app muted the Spanish track.** Film A has Spanish as audio 1 and
   English as audio 2. The old app's stream picker takes the first 5.1 track, then writes
   `language=eng` from subtitle language detection, so the file says English while the audio is not.
   The new app picks the English track by language.
@@ -154,9 +156,9 @@ The old app's audio output is the weakest part of the comparison:
 
 | Film | Old output | New output |
 |---|---|---|
-| Apocalypse Z | 1.81 GB, E-AC3 5.1(side) | 1.68 GB, E-AC3 5.1(side) |
-| Matchbox | 1.97 GB, Vorbis 5.1 | 2.10 GB, AAC 5.1 |
-| Spider-Man | 2.52 GB, Vorbis 5.1 | 2.67 GB, AAC 5.1 |
+| A | 1.81 GB, E-AC3 5.1(side) | 1.68 GB, E-AC3 5.1(side) |
+| B | 1.97 GB, Vorbis 5.1 | 2.10 GB, AAC 5.1 |
+| C | 2.52 GB, Vorbis 5.1 | 2.67 GB, AAC 5.1 |
 
 The new files are larger only because they keep the source audio codec at its proper bitrate instead
 of the old app's smaller Vorbis transcode. Video is copied untouched in both.
@@ -165,7 +167,7 @@ of the old app's smaller Vorbis transcode. Video is copied untouched in both.
 
 | Bug | Evidence |
 |---|---|
-| B16 — mute targets the first audio track, not the preferred language | Apocalypse Z: old app processed the Spanish track, labelled it English; new app processed English |
+| B16 — mute targets the first audio track, not the preferred language | Film A: old app processed the Spanish track, labelled it English; new app processed English |
 | B8 — text parsing of `ffmpeg -i` / channel layout | Old app's output channel correlations around zero on AAC 5.1; new app 1.000 on the diagonal |
 | B15 — no hits / codec policy re-encodes with the wrong codec | Old app turned AAC 5.1 into Vorbis 5.1 on two films; new app keeps AAC |
 | Old censor character is a space | Masked words vanish at cue starts/ends and the Censored track is mostly blank cues |
@@ -188,14 +190,3 @@ three files; every old hit had a new hit, and vice versa.
 
 The new app is the one to keep. The only parity item left from this run is the subtitle default flag,
 which is fixed in the source (the benchmark outputs above were produced before that fix).
-
-## Where the files are
-
-```
-F:\Torrents\MediaPilot\parity\
-├─ old\        three inputs + old outputs + same sidecars
-├─ new\        three inputs + new outputs
-├─ tx-old\     Matchbox full-transcription run, old app
-├─ tx-new\     Matchbox full-transcription run, new app
-└─ compare\    extracted Full/Censored subtitle tracks used for the tables
-```

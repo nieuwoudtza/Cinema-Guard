@@ -10,14 +10,14 @@
 
   <Identity
     Name="9943fed7-6249-4802-9b43-e27c3bfd00b8"
-    Publisher="CN=Ian"
+    Publisher="CN=WaveBit"
     Version="1.0.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="9943fed7-6249-4802-9b43-e27c3bfd00b8" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
     <DisplayName>Cinema Guard</DisplayName>
-    <PublisherDisplayName>Ian</PublisherDisplayName>
+    <PublisherDisplayName>WaveBit</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 

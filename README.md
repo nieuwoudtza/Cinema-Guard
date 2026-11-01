@@ -3,7 +3,7 @@
 Mutes filtered words in a film by writing a new file next to it. Speech comes from a model you pick
 on the **Models** page; FFmpeg does the audio. The video is never re-encoded.
 
-This is the WinUI 3 replacement for the old WinForms app in `..\Cinema Guard (Old)`.
+This is the WinUI 3 replacement for the old WinForms app. That app is not part of this repository.
 
 ## Layout
 
@@ -170,3 +170,20 @@ dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
 Covers the SRT/VTT/ASS parser, the matcher and masking (including the old off-by-one at the end of a
 cue), mute-range merging, subtitle drift alignment, FFmpeg argument construction, the codec policy,
 the cue builder, the speech catalogue and downloader, and the settings/output-path rules.
+
+## Contributing
+
+Issues and pull requests are welcome. Before sending one:
+
+```powershell
+dotnet build "Cinema Guard.slnx" -c Debug
+dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
+```
+
+Keep the build and the tests green, and match the style of the code around the change.
+
+## License
+
+[The Unlicense](LICENSE): this is free and unencumbered software released into the public domain.
+Use it, change it, sell it, ship it - no attribution required, no warranty given. The WaveBit name
+and logo are not part of that grant.
