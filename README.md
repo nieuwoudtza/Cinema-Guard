@@ -1,11 +1,73 @@
 # Cinema Guard
 
-Mutes filtered words in a film by writing a new file next to it. Speech comes from a model you pick
-on the **Models** page; FFmpeg does the audio. The video is never re-encoded.
+**Watch the films you like, without the language you don't.**
 
-This is the WinUI 3 replacement for the old WinForms app. That app is not part of this repository.
+Cinema Guard is a free Windows app that finds swear words and other words you choose in a film,
+and makes a copy of the film with those words muted. The rest of the film is untouched: the picture
+is copied as is, so there's no loss in quality, and your original file stays where it was.
 
-## Layout
+It's made for families, for watching with kids, or for anyone who would rather skip the language.
+
+## What it does
+
+- **Listens to the film.** A speech model on your own PC writes down every word, with exact
+  timings, so it catches words the subtitles leave out.
+- **Uses subtitles too.** It can read the subtitles inside the video, a subtitle file next to it,
+  or download one, and it lines them up with what's actually spoken.
+- **Mutes only the word.** Just the moment the word is spoken goes quiet, not the whole scene.
+  With *vocals-only* mode on a 5.1 or 7.1 film, it silences only the speaker channels carrying the
+  word, so music and effects keep playing.
+- **You choose the words.** Tick whole word families on the Filter page, or add your own words and
+  phrases.
+- **Clean subtitles as well.** It can add subtitles with the filtered words blanked out.
+- **Shows its work.** Click the hit count to see every word it found and exactly when.
+- **Works through a whole library.** Drop in films or entire folders and let it run; one problem
+  file never stops the rest.
+
+## Download
+
+**[Download CinemaGuard-Setup.exe](https://wavebit.dev/software/cinemaguard/CinemaGuard-Setup.exe)**
+
+Run the setup, choose a folder, and you're done. The app keeps itself up to date.
+
+Requirements: Windows 10 (version 1809 or later) or Windows 11, 64-bit. A graphics card can make transcription
+faster, but isn't needed.
+
+## How to use it
+
+1. **First launch:** click the one button on the Tools page. It installs FFmpeg and downloads the
+   recommended speech models. Everything else is already set up.
+2. **Add your films:** click Add files, or drag videos onto the window.
+3. **Click Censor.** Films are done one at a time, and you can add or remove files while it runs.
+4. **Watch.** The cleaned copy is saved next to the original, for example `Movie_CG.mp4` next to
+   `Movie.mp4`.
+
+## Good to know
+
+- **Your original is safe.** Cinema Guard always writes a new file. It only removes the original if
+  you tell it to in Settings, and only after it has checked that the new file is good.
+- **It stays on your PC.** Speech recognition runs on your own computer. The internet is used only
+  to download the tools and models, to check for updates, and to fetch subtitles if you ask it to.
+- **No model is perfect.** Speech recognition can miss a word, especially under loud music or
+  shouting. Using subtitles as well catches most of what the model misses.
+- **Re-runs are quick.** Transcripts are kept for 30 days, so changing your word list and running a
+  film again skips the slow part.
+
+## Questions, bugs and ideas
+
+Open an [issue](https://github.com/nieuwoudtza/Cinema-Guard/issues). Pull requests are welcome too;
+see [Contributing](#contributing).
+
+---
+
+## For developers
+
+Everything below is about how Cinema Guard is built. You don't need any of it to use the app.
+
+Cinema Guard is a WinUI 3 app on .NET 10. It replaces an older WinForms app, which is not part of
+this repository.
+
+### Project layout
 
 | Path | What |
 |---|---|
@@ -17,7 +79,7 @@ This is the WinUI 3 replacement for the old WinForms app. That app is not part o
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
 | `Cinema Guard/tools/Import-CgDat.ps1` | Reads the old app's `cg.dat` (Windows PowerShell 5.1) |
 
-## Build and run
+### Build and run
 
 ```powershell
 dotnet build "Cinema Guard.slnx" -c Debug
@@ -41,18 +103,14 @@ Build and pack an update release:
 .\publish.ps1 2.0.0 -SkipPreviousDownload
 ```
 
-## Using it
+### The queue in detail
 
-1. **Set up** on first launch. The Tools page has one button that installs FFmpeg and downloads the
-   recommended Phonon pair. Defaults are already selected; there is nothing else to configure.
-2. **Add files** or drag videos onto the window. Folders ask whether to include subfolders.
-3. **Generate subtitles** means "transcribe this file with the speech model"; **Extract subtitles**
-   means "use the subtitle track inside the video". New files start with whatever Settings → Files
-   says (Generate off, Extract on by default).
-4. **Censor** runs the queue. One file at a time; one failure never stops the rest. Files can be
-   added or removed while it runs.
-5. The hit count opens **Peek** (words, counts, exact times, and whether they came from the English
-   model, the multilingual model, the subtitle file, or the source's own masking).
+- **Generate subtitles** means "transcribe this file with the speech model"; **Extract subtitles**
+  means "use the subtitle track inside the video". New files start with whatever Settings → Files
+  says (Generate off, Extract on by default).
+- Folders ask whether to include subfolders.
+- **Peek** (the hit count) lists words, counts, exact times, and whether each came from the English
+  model, the multilingual model, the subtitle file, or the source's own masking.
 
 Output is `<name><affix>.<mp4|mkv>` (default `Movie_CG.mp4`). Beside the video, only:
 
@@ -65,7 +123,7 @@ Transcripts, the generated subtitles and the foreign-dialogue report are kept in
 transcripts for re-runs"; unused ones go after 30 days). Files an earlier version left beside the
 video are moved there.
 
-## Speech models
+### Speech models
 
 The Models page offers one choice or the recommended pair, and downloads/removes every file itself:
 
@@ -82,7 +140,7 @@ installed. Without it, Phonon runs on the CPU.
 Models are stored in `%LOCALAPPDATA%\CinemaGuard\models`; engines in `engines`. Both can be deleted
 from the Models page. The first run asks whether to download the recommended pair.
 
-## Command line
+### Command line
 
 ```
 Cinema Guard.exe "D:\Films\Heat (1995).mkv"          # opens the queue with the file
@@ -111,7 +169,7 @@ next start. A headless launch never installs one either.
 
 Older builds treat these options as paths that do not exist and ignore them, and always exit with 0.
 
-## What it needs
+### External tools
 
 | Tool | Why | Where |
 |---|---|---|
@@ -122,7 +180,7 @@ Older builds treat these options as paths that do not exist and ignore them, and
 A speech model is downloaded from the Models page, not installed with the app. Tools shows the
 status of everything; Settings holds overrides for every path.
 
-## How a file is processed
+### How a file is processed
 
 1. Probe with FFprobe; pick the film's main audio and subtitle track (preferring the preferred
    language, never a forced or commentary track).
@@ -138,7 +196,7 @@ status of everything; Settings holds overrides for every path.
 Vocals-only mode splits the 5.1/7.1 track, analyses each dialogue channel separately, silences only
 the channels that carry the word, and joins the channels back in one encode.
 
-## Where things live
+### Where things live
 
 - Settings: `%LOCALAPPDATA%\CinemaGuard\settings.json`
 - Models and engines: `%LOCALAPPDATA%\CinemaGuard\models`, `...\engines`
@@ -146,7 +204,7 @@ the channels that carry the word, and joins the channels back in one encode.
 - Logs: `%LOCALAPPDATA%\CinemaGuard\logs\` (every command line and error)
 - Temporary work: `%LOCALAPPDATA%\CinemaGuard\work\` (deleted after each file, older than 2 days on start)
 
-## Updates
+### Updates and releases
 
 Installed copies update themselves with [Velopack](https://velopack.io/) from
 `https://wavebit.dev/software/cinemaguard`. The feed is a plain folder outside the site's `wwwroot`,
@@ -161,7 +219,7 @@ Releases are numbered by date, `yyyy.MM.dd.<iteration>`: `.\publish.ps1` with no
 folder to find the next iteration). Velopack only accepts 3-part versions, so the package itself is
 `2026.1101.1`; the app shows the dated form.
 
-## Tests
+### Tests
 
 ```powershell
 dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
