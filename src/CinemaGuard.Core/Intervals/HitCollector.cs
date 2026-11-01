@@ -100,11 +100,9 @@ public static class HitCollector
 
         foreach (var entry in single)
         {
-            foreach (var (start, _) in FindPhrase(words.Select(w => w.Normalised).ToList(), entry))
-            {
-                var word = words[start].Word;
-                hits.Add(new Hit(word.Start - padBefore, word.End + padAfter, entry, source, WholeCue: false));
-            }
+            // A phrase (HOLY SHIT) mutes from its first word to its last, not the first word alone.
+            foreach (var (start, end) in FindPhrase(words.Select(w => w.Normalised).ToList(), entry))
+                hits.Add(new Hit(words[start].Word.Start - padBefore, words[end].Word.End + padAfter, entry, source, WholeCue: false));
         }
 
         // Words the source already masked (rare in a transcript, common in subtitles).
@@ -147,8 +145,8 @@ public static class HitCollector
 
             foreach (var match in SwearMatcher.Find(formatted, single))
             {
-                var estimate = EstimatedTime(formatted, match, cue);
-                AddEstimatedHit(hits, transcriptHits, fit, estimate, padBefore, padAfter, match.Entry);
+                var (from, to) = EstimatedSpan(formatted, match, cue);
+                AddEstimatedHit(hits, transcriptHits, fit, from, to, padBefore, padAfter, match.Entry);
             }
 
             foreach (var masked in SwearMatcher.FindMasked(cue.Text))
@@ -157,7 +155,7 @@ public static class HitCollector
                 if (raw.Length == 0) continue;
                 var fraction = (masked.Index + masked.Length / 2.0) / raw.Length;
                 var estimate = cue.Start.TotalSeconds + fraction * cueDuration;
-                AddEstimatedHit(hits, transcriptHits, fit, estimate, padBefore, padAfter, SwearMatcher.MaskedLabel);
+                AddEstimatedHit(hits, transcriptHits, fit, estimate, estimate, padBefore, padAfter, SwearMatcher.MaskedLabel);
             }
         }
 
@@ -232,25 +230,36 @@ public static class HitCollector
         List<Hit> hits,
         IReadOnlyList<Hit> transcriptHits,
         SyncFit fit,
-        double estimate,
+        double from,
+        double to,
         double padBefore,
         double padAfter,
         string label)
     {
         // Phonon already timed this word precisely; the subtitle estimate adds nothing.
-        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - estimate) <= SnapWindowSeconds &&
+        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - from) <= SnapWindowSeconds &&
                                                 (string.Equals(h.Label, label, StringComparison.Ordinal) || label == SwearMatcher.MaskedLabel));
         if (duplicate) return;
 
-        var mapped = fit.Map(estimate);
-        hits.Add(new Hit(mapped - padBefore, mapped + padAfter, label, HitSource.Subtitle, WholeCue: false));
+        hits.Add(new Hit(fit.Map(from) - padBefore, fit.Map(to) + padAfter, label, HitSource.Subtitle, WholeCue: false));
     }
 
-    private static double EstimatedTime(string formatted, WordMatch match, Cue cue)
+    /// <summary>
+    /// Where in the cue the match is spoken, by its share of the text. A word is a single moment (its
+    /// middle) padded either side; a phrase runs from where its first word starts to where its last ends.
+    /// </summary>
+    private static (double From, double To) EstimatedSpan(string formatted, WordMatch match, Cue cue)
     {
         var duration = cue.End.TotalSeconds - cue.Start.TotalSeconds;
-        var fraction = (match.Index + match.Length / 2.0) / formatted.Length;
-        return cue.Start.TotalSeconds + fraction * duration;
+        double At(double index) => cue.Start.TotalSeconds + index / formatted.Length * duration;
+
+        if (!match.Entry.Contains(' '))
+        {
+            var middle = At(match.Index + match.Length / 2.0);
+            return (middle, middle);
+        }
+
+        return (At(match.Index), At(match.End));
     }
 
     private static PhononSegment? FindSegment(IReadOnlyList<PhononSegment> segments, double wordStart, double wordEnd)

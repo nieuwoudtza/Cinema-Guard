@@ -173,6 +173,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var media = new MediaItem(full);
         media.GenerateSubtitles = ShouldGenerate(media);
+        media.SubtitleSource = media.SubtitleSourceOnDisk();
 
         Items.Add(new MediaItemViewModel(media));
         Log.Info($"Queued {Path.GetFileName(full)}");

@@ -67,6 +67,16 @@ public class SettingsTests
     }
 
     [Fact]
+    public void APhraseKeepsOneSpaceBetweenItsWords()
+    {
+        var settings = new AppSettings { WordsSingle = ["holy  shit", " HOLY\tSHIT ", "HOLY SHIT"] };
+
+        settings.Normalise();
+
+        Assert.Equal(["HOLY SHIT"], settings.WordsSingle);
+    }
+
+    [Fact]
     public void JsonRoundTripKeepsEnumsAsNames()
     {
         var settings = AppSettings.CreateDefault();

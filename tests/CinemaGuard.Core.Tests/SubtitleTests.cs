@@ -181,6 +181,29 @@ public class SwearMatcherTests
         Assert.Single(SwearMatcher.Find("OH MY GOD DAMN IT", ["GOD DAMN"]));
     }
 
+    [Theory]
+    [InlineData("Holy shit!")]
+    [InlineData("HOLY... SHIT")]
+    [InlineData("Oh, holy-shit, look")]
+    [InlineData("holy, shit")]
+    public void FindsAPhraseAcrossPunctuation(string text)
+    {
+        var match = Assert.Single(SwearMatcher.Find(text, ["HOLY  SHIT"]));
+
+        Assert.Equal("HOLY SHIT", match.Entry);
+        Assert.StartsWith("HOLY", text.ToUpperInvariant()[match.Index..]);
+        Assert.EndsWith("SHIT", text.ToUpperInvariant()[..match.End]);
+    }
+
+    [Theory]
+    [InlineData("HOLY SHITTY day")]
+    [InlineData("WHOLY SHIT")]
+    [InlineData("HOLY COW, SHIT")]
+    public void APhraseStillMatchesWholeWordsOnly(string text)
+    {
+        Assert.Empty(SwearMatcher.Find(text, ["HOLY SHIT"]));
+    }
+
     [Fact]
     public void DetectsWordsTheSourceAlreadyMasked()
     {

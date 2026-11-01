@@ -138,6 +138,16 @@ public sealed class PhononService(IProcessRunner runner, ToolLocator locator)
 {
     private static readonly Semaphore CrossProcessSemaphore = CreateCrossProcessSemaphore();
 
+    /// <summary>
+    /// Why Docker itself was unusable earlier in this queue (engine down, image missing), or null. Later
+    /// passes go straight to the CPU instead of waiting up to 90 s for Docker Desktop again. A failure
+    /// inside one container run is not remembered: the next film tries the GPU again.
+    /// </summary>
+    private volatile string? _dockerUnavailable;
+
+    /// <summary>Forgets a remembered Docker failure; called when a queue starts and ends.</summary>
+    public void ResetDockerCheck() => _dockerUnavailable = null;
+
     /// <param name="local">The CPU runtime, or null when Phonon is not installed locally (Docker only).</param>
     public async Task<PhononOutcome> TranscribeAsync(
         string wavPath, string model, AppSettings settings, PhononLauncher? local, Action<string>? onLog, CancellationToken cancellationToken)
@@ -147,22 +157,29 @@ public sealed class PhononService(IProcessRunner runner, ToolLocator locator)
 
         Exception? dockerError = null;
 
-        if (preferDocker && docker is not null)
+        if (preferDocker && docker is not null && _dockerUnavailable is { } remembered)
         {
+            dockerError = new PhononException(remembered);
+            onLog?.Invoke($"GPU unavailable ({remembered}); using the CPU.");
+        }
+        else if (preferDocker && docker is not null)
+        {
+            string? unavailable = null;
+
             try
             {
                 if (!await IsEngineReadyAsync(docker, cancellationToken))
                 {
                     if (!settings.StartDockerDesktop)
-                        throw new PhononException("Docker Desktop is not running.");
+                        throw new PhononException(unavailable = "Docker Desktop is not running.");
 
                     await StartDockerDesktopAsync(docker, onLog, cancellationToken);
                     if (!await IsEngineReadyAsync(docker, cancellationToken))
-                        throw new PhononException("Docker Desktop did not start in time.");
+                        throw new PhononException(unavailable = "Docker Desktop did not start in time.");
                 }
 
                 if (!await ImageExistsAsync(docker, settings.DockerImage, cancellationToken))
-                    throw new PhononException($"The Docker image {settings.DockerImage} is not downloaded.");
+                    throw new PhononException(unavailable = $"The Docker image {settings.DockerImage} is not downloaded.");
 
                 var result = await RunSerialisedAsync(
                     new DockerPhononRunner(docker, settings.DockerImage, runner), wavPath, model, settings.PhononHotwords, onLog, cancellationToken);
@@ -177,6 +194,8 @@ public sealed class PhononService(IProcessRunner runner, ToolLocator locator)
             {
                 // A cancelled docker probe reports "not running"; never fall back to the CPU for that.
                 cancellationToken.ThrowIfCancellationRequested();
+
+                if (unavailable is not null) _dockerUnavailable = unavailable;
 
                 dockerError = ex;
                 Log.Warn($"GPU transcription unavailable, trying the CPU: {ex.Message}");

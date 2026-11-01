@@ -207,7 +207,8 @@ public sealed class AppSettings
         foreach (var word in words ?? [])
         {
             if (string.IsNullOrWhiteSpace(word)) continue;
-            var cleaned = word.Trim().ToUpperInvariant();
+            // One space between the words of a phrase, so "HOLY  SHIT" and "HOLY SHIT" are one entry.
+            var cleaned = string.Join(' ', word.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
             if (cleaned.Length == 0) continue;
             if (seen.Add(cleaned)) result.Add(cleaned);
         }

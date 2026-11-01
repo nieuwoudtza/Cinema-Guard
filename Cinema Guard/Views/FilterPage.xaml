@@ -26,13 +26,13 @@
                         <TextBlock Text="Blasphemy and insults: the entire line is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
                         <Button Content="Select all / none" Click="ToggleAllFull_Click" HorizontalAlignment="Left" />
                         <StackPanel x:Name="FullWordsPanel" Spacing="0" />
-                        <TextBlock Text="Additional words (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
+                        <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
                         <TextBox
                             x:Name="FullCustom"
                             AcceptsReturn="True"
                             Height="96"
                             TextWrapping="Wrap"
-                            PlaceholderText="One word per line"
+                            PlaceholderText="One per line"
                             FontFamily="Consolas" />
                     </StackPanel>
                 </Border>
@@ -43,13 +43,13 @@
                         <TextBlock Text="Everyday swearing: only the spoken word is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
                         <Button Content="Select all / none" Click="ToggleAllSingle_Click" HorizontalAlignment="Left" />
                         <StackPanel x:Name="SingleWordsPanel" Spacing="0" />
-                        <TextBlock Text="Additional words (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
+                        <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
                         <TextBox
                             x:Name="SingleCustom"
                             AcceptsReturn="True"
                             Height="96"
                             TextWrapping="Wrap"
-                            PlaceholderText="One word per line"
+                            PlaceholderText="One per line, e.g. HOLY SHIT"
                             FontFamily="Consolas" />
                     </StackPanel>
                 </Border>
@@ -63,7 +63,7 @@
             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock x:Name="Status" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="Done" Style="{StaticResource AccentButtonStyle}" Click="Done_Click" />
+                <Button Grid.Column="1" Content="Save" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
             </Grid>
         </Border>
     </Grid>

@@ -208,10 +208,14 @@ public sealed class SpeechService(ModelManager models, PhononService phonon, Too
         _ => "None",
     };
 
+    /// <summary>Starts a queue run with no Docker failure remembered from an earlier one.</summary>
+    public void BeginSession() => phonon.ResetDockerCheck();
+
     /// <summary>Ends the engine host after a queue (frees RAM and VRAM). Safe to call any time.</summary>
     public void EndSession()
     {
         _host?.Stop();
+        phonon.ResetDockerCheck();
     }
 
     private static string HostOf(string url)

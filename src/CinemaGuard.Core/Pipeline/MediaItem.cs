@@ -46,11 +46,30 @@ public sealed class MediaItem
     public bool GenerateSubtitles { get; set; } = true;
     public string SubtitleSource { get; set; } = "None";
 
+    /// <summary>
+    /// The subtitles a run will find beside the film, in the order the pipeline looks for them, so the
+    /// queue badge is right before the first run. A track inside the video is only known after the probe.
+    /// </summary>
+    public string SubtitleSourceOnDisk()
+    {
+        if (!string.IsNullOrWhiteSpace(CustomSubtitlePath) && File.Exists(CustomSubtitlePath)) return "Selected file";
+        if (File.Exists(SidecarPath)) return SubtitleFileSource;
+        if (File.Exists(GeneratedPath)) return "Generated";
+        if (File.Exists(OneWordPath)) return "One-word subtitles";
+        return "None";
+    }
+
+    /// <summary>The badge for &lt;name&gt;.srt beside the film.</summary>
+    public const string SubtitleFileSource = "Subtitle file";
+
     public MediaStatus Status { get; set; } = MediaStatus.Waiting;
     public string StatusText { get; set; } = "Waiting";
     public double Progress { get; set; }
     public string? Message { get; set; }
     public string? OutputPath { get; set; }
+
+    /// <summary>Why a transcription pass ran on the CPU instead of the GPU, said on the finished row.</summary>
+    public string? FallbackNote { get; set; }
 
     public MediaProbe? Probe { get; set; }
     public AudioSelection? Audio { get; set; }

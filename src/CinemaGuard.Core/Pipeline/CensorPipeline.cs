@@ -30,6 +30,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         item.Progress = 0;
         item.Message = null;
         item.OutputPath = null;
+        item.FallbackNote = null;
 
         try
         {
@@ -315,9 +316,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             ? "No filtered words were heard; copied without mutes."
             : $"{hits.Hits.Count} filtered word{(hits.Hits.Count == 1 ? string.Empty : "s")} in {hits.Ranges.Count} range{(hits.Ranges.Count == 1 ? string.Empty : "s")}.";
 
-        item.Message = english?.Truncated == true
-            ? summary + " The transcript was truncated; some words may be missing."
-            : summary;
+        if (english?.Truncated == true) summary += " The transcript was truncated; some words may be missing.";
+        if (item.FallbackNote is not null) summary += " " + item.FallbackNote;
+
+        item.Message = summary;
 
         if (settings.DeleteOriginalFiles) DeleteOriginals(item);
     }
@@ -378,8 +380,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             TranscriptCache.Save(primaryCache, source, english);
 
             if (english.Truncated) item.Message = "The transcript was truncated; some words may be missing.";
-            Log.Info($"{item.Stem}: {primaryPass.DisplayName} pass done with {outcome.EngineName}" +
-                     (outcome.Note is not null ? $" (fallback: {outcome.Note})" : string.Empty));
+            RecordPass(item, primaryPass, outcome);
         }
 
         WriteGenerated(item, english, settings);
@@ -396,6 +397,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
                 multilingual = outcome.Result;
                 TranscriptCache.Save(item.CachePathFor(secondPass.CacheKey), multilingualSource!, multilingual);
+                RecordPass(item, secondPass, outcome);
             }
 
             item.ForeignSpans = ForeignLanguageReporter.Analyse(english, multilingual);
@@ -617,7 +619,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (File.Exists(item.SidecarPath))
         {
             var cues = TryReadSubtitleFile(item.SidecarPath);
-            if (cues is not null) return (cues, "Sidecar");
+            if (cues is not null) return (cues, MediaItem.SubtitleFileSource);
         }
 
         var stream = StreamSelector.SelectSubtitle(probe, settings.PreferredLanguage, out var reason);
@@ -718,6 +720,16 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         RecycleBin.Send(item.LanguageReportPath);
     }
 
+    /// <summary>Logs which engine ran the pass; a quiet fall back to the CPU is also said on the row.</summary>
+    private static void RecordPass(MediaItem item, SpeechPass pass, SpeechOutcome outcome)
+    {
+        Log.Info($"{item.Stem}: {pass.DisplayName} pass done with {outcome.EngineName}" +
+                 (outcome.Note is not null ? $" (fallback: {outcome.Note})" : string.Empty));
+
+        if (outcome.Note is null) return;
+        item.FallbackNote ??= $"Transcribed on the CPU because the GPU was unavailable ({outcome.Note.Trim().TrimEnd('.')}).";
+    }
+
     private void Skip(MediaItem item, string reason)
     {
         item.Status = MediaStatus.Skipped;
@@ -790,6 +802,7 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
     {
         var stopwatch = Stopwatch.StartNew();
         KeepAwake.Start();
+        speech.BeginSession();
 
         try
         {

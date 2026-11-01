@@ -29,6 +29,33 @@ public class HitCollectorTests
     }
 
     [Fact]
+    public void AWordOnlyPhraseMutesEveryWordOfIt()
+    {
+        var transcript = Transcript(9, 14, "Oh, holy shit! Run.", (9.2, 9.4, "Oh,"), (10, 10.3, "holy"), (10.4, 10.8, "shit!"), (11.5, 11.8, "Run."));
+
+        var hit = Assert.Single(HitCollector.FromTranscript(transcript, HitSource.English, Options(single: ["HOLY SHIT"])));
+
+        // From "holy" (10.0 - 0.15 pad) to the end of "shit" (10.8 + 0.25 pad); not "holy" alone.
+        Assert.Equal(9.85, hit.Start, 3);
+        Assert.Equal(11.05, hit.End, 3);
+        Assert.Equal("HOLY SHIT", hit.Label);
+        Assert.False(hit.WholeCue);
+    }
+
+    [Fact]
+    public void ASubtitlePhraseIsEstimatedFromItsFirstWordToItsLast()
+    {
+        // "HOLY SHIT" fills the whole text, so the estimate spans the whole cue, padded 0.5 s each side.
+        var cue = new Cue { StartSeconds = 10, EndSeconds = 12, Text = "Holy... shit!" };
+
+        var hit = Assert.Single(HitCollector.FromSubtitles([cue], SyncFit.Identity, Options(single: ["HOLY SHIT"]), []));
+
+        Assert.True(hit.Start <= 9.5 + 0.001, $"started at {hit.Start}");
+        Assert.True(hit.End >= 11.8, $"ended at {hit.End}");
+        Assert.True(hit.End - hit.Start > 2, "a phrase covers more than a single padded word");
+    }
+
+    [Fact]
     public void FullWordsMuteTheirWholeSegment()
     {
         var transcript = Transcript(9, 12, "jesus christ", (9.5, 9.8, "jesus"), (10, 10.4, "christ"));

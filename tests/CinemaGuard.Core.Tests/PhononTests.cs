@@ -1,5 +1,7 @@
 using CinemaGuard.Core.Phonon;
+using CinemaGuard.Core.Settings;
 using CinemaGuard.Core.Subtitles;
+using CinemaGuard.Core.Tools;
 
 namespace CinemaGuard.Core.Tests;
 
@@ -87,6 +89,55 @@ public class PhononResultTests
         finally
         {
             File.Delete(path);
+        }
+    }
+}
+
+public class PhononServiceTests
+{
+    /// <summary>A docker whose engine never answers; records every command it was asked to run.</summary>
+    private sealed class StoppedDocker : IProcessRunner
+    {
+        public List<string> Calls { get; } = [];
+
+        public Task<ProcessResult> RunAsync(
+            ProcessSpec spec, Action<string>? onStandardOutput = null, Action<string>? onStandardError = null, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(string.Join(' ', spec.Arguments));
+            return Task.FromResult(new ProcessResult(1, string.Empty, "error during connect", false));
+        }
+    }
+
+    [Fact]
+    public async Task ADockerThatIsNotRunningIsCheckedOncePerQueue()
+    {
+        var docker = Path.Combine(Path.GetTempPath(), "cg-docker-" + Guid.NewGuid().ToString("N") + ".exe");
+        File.WriteAllText(docker, string.Empty);
+
+        try
+        {
+            var runner = new StoppedDocker();
+            var service = new PhononService(runner, new ToolLocator(runner));
+            var settings = new AppSettings { DockerPath = docker, StartDockerDesktop = false, PhononRuntime = PhononRuntimeMode.Auto };
+
+            Task<PhononOutcome> Transcribe() =>
+                service.TranscribeAsync("film.wav", PhononModels.English, settings, local: null, onLog: null, CancellationToken.None);
+
+            // No CPU runtime either, so each pass fails, naming the Docker reason.
+            await Assert.ThrowsAsync<PhononException>(Transcribe);
+            var second = await Assert.ThrowsAsync<PhononException>(Transcribe);
+
+            Assert.Single(runner.Calls);
+            Assert.Contains("Docker Desktop is not running", second.Message);
+
+            // A new queue asks Docker again.
+            service.ResetDockerCheck();
+            await Assert.ThrowsAsync<PhononException>(Transcribe);
+            Assert.Equal(2, runner.Calls.Count);
+        }
+        finally
+        {
+            File.Delete(docker);
         }
     }
 }

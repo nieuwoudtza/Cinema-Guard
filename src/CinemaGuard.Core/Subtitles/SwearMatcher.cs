@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
 namespace CinemaGuard.Core.Subtitles;
@@ -22,7 +23,13 @@ public static partial class SwearMatcher
         @"\[(?:bleep|censored|expletive)\]|\((?:bleep|censored|expletive)\)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly ConcurrentDictionary<string, Regex> PhraseRegexes = new(StringComparer.Ordinal);
+
     public const string MaskedLabel = "MASKED";
+
+    private static Regex BuildPhraseRegex(string phrase) => new(
+        @"(?<!\p{L})" + string.Join(@"[^\p{L}\p{N}]+", phrase.Split(' ').Select(Regex.Escape)) + @"(?!\p{L})",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static List<WordMatch> Find(string? text, IReadOnlyCollection<string> entries)
     {
@@ -35,6 +42,16 @@ public static partial class SwearMatcher
         {
             var entry = rawEntry.Trim().ToUpperInvariant();
             if (entry.Length == 0) continue;
+
+            var parts = entry.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 1)
+            {
+                // A phrase matches across any punctuation between its words: "Holy... shit!", "holy-shit".
+                var phrase = string.Join(' ', parts);
+                foreach (Match match in PhraseRegexes.GetOrAdd(phrase, BuildPhraseRegex).Matches(upper))
+                    matches.Add(new WordMatch(match.Index, match.Length, phrase));
+                continue;
+            }
 
             var searchFrom = 0;
             while (searchFrom <= upper.Length - entry.Length)

@@ -52,12 +52,24 @@ public sealed partial class MediaItemViewModel : ObservableObject
     [ObservableProperty] private string _resultGlyph = "\uE823";
     [ObservableProperty] private Brush _resultBrush = NeutralBrush;
 
+    /// <summary>Mirrors the row's selection in the queue list, for the tick box inside the card.</summary>
+    [ObservableProperty] private bool _isSelected;
+
     public bool HasHits => HitCount > 0;
+
+    /// <summary>The full detail on hover (the row trims it); null when there is none, so no empty tooltip shows.</summary>
+    public string? DetailToolTip => string.IsNullOrEmpty(Detail) ? null : Detail;
+
+    partial void OnDetailChanged(string value) => OnPropertyChanged(nameof(DetailToolTip));
 
     public void Sync()
     {
         Status = Item.StatusLabel;
-        Detail = string.IsNullOrWhiteSpace(Item.Message) ? Item.StatusText : Item.Message!;
+
+        // The step text is the status itself while waiting or running; never show it twice ("Waiting Waiting").
+        Detail = !string.IsNullOrWhiteSpace(Item.Message) ? Item.Message!
+            : Item.StatusText == Status ? string.Empty
+            : Item.StatusText;
         Progress = Item.Progress;
 
         var running = Item.Status == MediaStatus.Running;

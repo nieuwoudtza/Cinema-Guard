@@ -82,21 +82,24 @@ public sealed partial class FilterPage : Page
         foreach (var (box, _) in boxes) box.IsChecked = !allChecked;
     }
 
-    private void Done_Click(object sender, RoutedEventArgs e)
+    private void Save_Click(object sender, RoutedEventArgs e)
     {
         ApplyCustomWords();
 
         if (_settings.WordsFull.Count == 0 && _settings.WordsSingle.Count == 0)
         {
-            Status.Text = "Pick at least one word before leaving.";
+            Status.Text = "Pick at least one word before saving.";
             return;
         }
 
         App.Settings.Save();
-        Status.Text = $"{_settings.WordsFull.Count + _settings.WordsSingle.Count} word(s) saved";
 
-        if (Frame.CanGoBack) Frame.GoBack();
-        else Frame.Navigate(typeof(QueuePage));
+        // Show the lists as saved (upper case, one space inside a phrase), so the save is visible.
+        var familyWords = FilterCatalog.Roots.SelectMany(FilterCatalog.Associated).ToHashSet(StringComparer.Ordinal);
+        FullCustom.Text = string.Join(Environment.NewLine, _settings.WordsFull.Where(word => !familyWords.Contains(word)));
+        SingleCustom.Text = string.Join(Environment.NewLine, _settings.WordsSingle.Where(word => !familyWords.Contains(word)));
+
+        Status.Text = $"Saved · {_settings.WordsFull.Count + _settings.WordsSingle.Count} word(s) active";
     }
 
     private void ApplyCustomWords()
