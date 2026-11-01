@@ -12,15 +12,25 @@
 
     Then upload the whole release folder to the IIS folder behind the feed URL.
 
+    Versions are dated: yyyy.MM.dd.<iteration>. The first release today is 2026.11.01.1, the next one
+    the same day 2026.11.01.2. The iteration is found from the releases already on the feed and in the
+    local release folder, so normally no version is passed at all.
+
+    Velopack only accepts 3-part SemVer versions, so the package itself is numbered year.MMdd.iteration
+    (2026.11.01.1 -> 2026.1101.1; 5 January -> 2026.105.1). It sorts by day, then by iteration. The app,
+    the setup window and the "update ready" bar show the dated form; the .nupkg file names, and the
+    version Windows lists under Installed apps, show the package form.
+
     Examples:
-      .\publish.ps1 2.0.1
-      .\publish.ps1 2.1.0 -FeedUrl https://wavebit.dev/software/cinemaguard
-      .\publish.ps1 2.1.0 -NoInstaller -SkipPreviousDownload
+      .\publish.ps1
+      .\publish.ps1 -SkipPreviousDownload            (the very first release)
+      .\publish.ps1 2026.11.01.3                     (force a number; must be newer than every release)
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
-    [string]$Version,
+    # Optional: yyyy.MM.dd.<iteration>. Without it: today, next free iteration.
+    [Parameter(Position = 0)]
+    [string]$Version = "",
 
     [string]$FeedUrl = "https://wavebit.dev/software/cinemaguard",
 
@@ -64,10 +74,82 @@ function Fail([string]$text) {
 
 # ---------------------------------------------------------------- versions and tools
 
-$parsed = $null
-if (-not [version]::TryParse($Version, [ref]$parsed) -or $Version.Split(".").Count -ne 3) {
-    Fail "the version must look like 2.0.1 (three numbers)."
+function PackageVersionOf([datetime]$date, [int]$iteration) {
+    "{0}.{1}.{2}" -f $date.Year, ($date.Month * 100 + $date.Day), $iteration
 }
+
+# Every package version already released: the live feed, the local release folder, and the
+# -PreviousReleasePath folder. The feed being unreachable is only a warning (the site may not be up yet).
+function Get-ReleasedVersions {
+    $found = New-Object System.Collections.Generic.List[string]
+
+    try {
+        $feed = Invoke-RestMethod -Uri ($FeedUrl.TrimEnd("/") + "/releases.win.json") -TimeoutSec 20 -Headers @{ "Cache-Control" = "no-cache" }
+        foreach ($asset in @($feed.Assets)) { if ($asset.Version) { $found.Add([string]$asset.Version) } }
+    }
+    catch {
+        Write-Warning "Could not read the versions on $FeedUrl ($($_.Exception.Message)). Only local releases are checked."
+    }
+
+    foreach ($folder in @($ReleasesDir, $PreviousReleasePath)) {
+        if (-not $folder -or -not (Test-Path $folder)) { continue }
+
+        $index = Join-Path $folder "releases.win.json"
+        if (Test-Path $index) {
+            $local = Get-Content $index -Raw | ConvertFrom-Json
+            foreach ($asset in @($local.Assets)) { if ($asset.Version) { $found.Add([string]$asset.Version) } }
+        }
+
+        foreach ($package in Get-ChildItem $folder -Filter "WaveBit.CinemaGuard-*-full.nupkg" -ErrorAction SilentlyContinue) {
+            if ($package.Name -match '^WaveBit\.CinemaGuard-(.+)-full\.nupkg$') { $found.Add($Matches[1]) }
+        }
+    }
+
+    $found | Sort-Object -Unique
+}
+
+$released = @(Get-ReleasedVersions)
+
+if ($Version) {
+    if ($Version -notmatch '^(\d{4}\.\d{2}\.\d{2})\.(\d+)$') {
+        Fail "the version must look like 2026.11.01.1 (yyyy.MM.dd.iteration)."
+    }
+
+    $date = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($Matches[1], "yyyy.MM.dd", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$date)) {
+        Fail "$($Matches[1]) is not a real date."
+    }
+
+    $iteration = [int]$Matches[2]
+    if ($iteration -lt 1 -or $iteration -gt 65535) { Fail "the iteration must be between 1 and 65535." }
+}
+else {
+    $date = (Get-Date).Date
+    $prefix = "{0}.{1}." -f $date.Year, ($date.Month * 100 + $date.Day)
+
+    $pattern = "^" + [regex]::Escape($prefix) + "(\d+)$"
+    $today = @($released | Where-Object { $_ -match $pattern } | ForEach-Object { [int]($_ -replace $pattern, '$1') })
+    $iteration = if ($today.Count -gt 0) { ($today | Measure-Object -Maximum).Maximum + 1 } else { 1 }
+}
+
+$PackageVersion = PackageVersionOf $date $iteration
+$DisplayVersion = "{0}.{1}" -f $date.ToString("yyyy.MM.dd"), $iteration
+# Windows file properties need four numbers, each at most 65535.
+$FileVersion = "{0}.{1}.{2}.{3}" -f $date.Year, $date.Month, $date.Day, $iteration
+
+if ($released -contains $PackageVersion) {
+    Fail "$DisplayVersion ($PackageVersion) has already been released. Leave the version out to get the next one."
+}
+
+# Clients only move to a higher version: a number below the newest release would never install.
+$newest = $released | ForEach-Object { $v = $null; if ([version]::TryParse($_, [ref]$v)) { $v } } | Sort-Object -Descending | Select-Object -First 1
+if ($newest -and [version]$PackageVersion -le $newest) {
+    Fail "$DisplayVersion ($PackageVersion) is not newer than the latest release $newest, so no one would get it."
+}
+
+Write-Host "Version $DisplayVersion (package $PackageVersion)" -ForegroundColor Green
+
+$versionArgs = @("-p:Version=$PackageVersion", "-p:InformationalVersion=$DisplayVersion", "-p:FileVersion=$FileVersion")
 
 $running = Get-Process -Name "Cinema Guard" -ErrorAction SilentlyContinue
 if ($running) {
@@ -84,7 +166,7 @@ if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
 
 # ---------------------------------------------------------------- publish
 
-Step "Publishing $Version to $PublishDir"
+Step "Publishing $DisplayVersion to $PublishDir"
 
 if (Test-Path $PublishDir) { Remove-Item $PublishDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $PublishDir | Out-Null
@@ -94,7 +176,7 @@ New-Item -ItemType Directory -Force -Path $ReleasesDir | Out-Null
     -c Release `
     -p:Platform=x64 `
     -p:PublishProfile=win-x64 `
-    -p:Version=$Version `
+    @versionArgs `
     -o $PublishDir `
     --nologo
 
@@ -166,7 +248,7 @@ Step "Packing the release"
 $packArgs = @(
     "pack",
     "--packId", "WaveBit.CinemaGuard",
-    "--packVersion", $Version,
+    "--packVersion", $PackageVersion,
     "--packDir", $PublishDir,
     "--mainExe", "Cinema Guard.exe",
     "--packTitle", "Cinema Guard",
@@ -193,7 +275,7 @@ if (-not $NoInstaller) {
 
     & dotnet build $installerProject -c Release --nologo `
         "-p:PayloadPath=$setupPath" `
-        "-p:Version=$Version"
+        @versionArgs
 
     if ($LASTEXITCODE -ne 0) { Fail "building the installer returned $LASTEXITCODE." }
 

@@ -133,6 +133,11 @@ version list. Only a standalone IIS site or virtual directory needs `deploy/web.
 (`publish.ps1 -IisWebConfig`). `CINEMAGUARD_UPDATE_FEED` points a test install at another folder or
 staging URL.
 
+Releases are numbered by date, `yyyy.MM.dd.<iteration>`: `.\publish.ps1` with no arguments makes
+`2026.11.01.1`, and a second release that day `2026.11.01.2` (it reads the feed and the local release
+folder to find the next iteration). Velopack only accepts 3-part versions, so the package itself is
+`2026.1101.1`; the app shows the dated form.
+
 ## Tests
 
 ```powershell

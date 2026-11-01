@@ -241,3 +241,19 @@ public class OutputPathPolicyTests
         Assert.True(FileTypes.IsSupportedSubtitle(".srt"));
     }
 }
+
+public class VersionTests
+{
+    [Theory]
+    [InlineData("2026.1101.1", "2026.11.01.1")]
+    [InlineData("2026.1101.2", "2026.11.01.2")]
+    [InlineData("2027.105.12", "2027.01.05.12")]
+    [InlineData("2026.1231.3", "2026.12.31.3")]
+    [InlineData("2.0.1", "2.0.1")]
+    [InlineData("2026.1301.1", "2026.1301.1")]
+    [InlineData("2026.230.1", "2026.230.1")]
+    [InlineData("2026.11.01.1", "2026.11.01.1")]
+    [InlineData("", "")]
+    public void ShowsThePackageVersionAsADate(string package, string expected) =>
+        Assert.Equal(expected, CoreInfo.DisplayVersion(package));
+}

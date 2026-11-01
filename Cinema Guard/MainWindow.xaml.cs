@@ -33,6 +33,10 @@ public sealed partial class MainWindow : Window
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         AppWindow.Move(new PointInt32(area.X + Math.Max(0, (area.Width - 1240) / 2), area.Y + Math.Max(0, (area.Height - 860) / 2)));
 
+        // Taskbar, Alt+Tab and the window menu; an unpackaged app does not get the exe's icon by itself.
+        var icon = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        if (System.IO.File.Exists(icon)) AppWindow.SetIcon(icon);
+
         AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
 

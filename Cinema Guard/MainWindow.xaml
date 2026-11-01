@@ -15,7 +15,7 @@
     <Grid RowDefinitions="48,*">
         <Grid x:Name="TitleBar" Grid.Row="0" Padding="18,0,140,0" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE714;" FontSize="15" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <Image Source="ms-appx:///Assets/AppIcon.png" Width="18" Height="18" />
                 <TextBlock Text="Cinema Guard" Style="{StaticResource BodyStrongTextBlockStyle}" />
                 <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,0" VerticalAlignment="Center">
                     <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />

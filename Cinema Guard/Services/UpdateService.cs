@@ -23,7 +23,7 @@ public sealed class UpdateService
     public bool IsInstalled => _manager.IsInstalled;
 
     /// <summary>The version downloaded and waiting for a restart, if any.</summary>
-    public string? ReadyVersion => _ready?.Version.ToString();
+    public string? ReadyVersion => _ready is null ? null : CinemaGuard.Core.CoreInfo.DisplayVersion(_ready.Version.ToString());
 
     /// <summary>Checks the feed and downloads a newer release in the background. Never throws.</summary>
     public async Task<string?> PrepareAsync(CancellationToken cancellationToken)
