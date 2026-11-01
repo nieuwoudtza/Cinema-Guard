@@ -20,6 +20,9 @@ public sealed partial class SettingsPage : Page
 
     private void ChangeModel_Click(object sender, RoutedEventArgs e) => App.Shell?.NavigateTo("models");
 
+    private async void CommandLine_Click(object sender, RoutedEventArgs e) =>
+        await Dialogs.ShowCommandLineAsync(XamlRoot, CinemaGuard.Core.Pipeline.LaunchArguments.HelpText);
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         var (ok, message) = ViewModel.Save();

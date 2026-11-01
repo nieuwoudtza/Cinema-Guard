@@ -22,7 +22,18 @@ public static class OutputPathPolicy
     public static bool Mp4FriendlyAudio(string? codecName) =>
         codecName?.ToLowerInvariant() is "aac" or "ac3" or "eac3" or "mp3" or "alac" or "flac" or "mp2";
 
-    public static OutputPlan Decide(string inputPath, AppSettings settings, MediaStreamInfo? audio)
+    /// <summary>
+    /// The format an audio-only file is written back in: its own, except raw AAC and WMA, which become M4A
+    /// (an AAC stream without a container has no room for chapters or tags; FFmpeg has no good WMA encoder).
+    /// </summary>
+    public static string AudioFileExtension(string inputPath) => Path.GetExtension(inputPath).ToLowerInvariant() switch
+    {
+        ".aac" or ".wma" => ".m4a",
+        var extension => extension,
+    };
+
+    /// <param name="otherAudio">The source's other audio tracks that are copied too; their codecs also decide the container.</param>
+    public static OutputPlan Decide(string inputPath, AppSettings settings, MediaStreamInfo? audio, IEnumerable<MediaStreamInfo>? otherAudio = null)
     {
         var directory = Path.GetDirectoryName(inputPath) ?? string.Empty;
         var stem = Path.GetFileNameWithoutExtension(inputPath);
@@ -31,16 +42,25 @@ public static class OutputPathPolicy
         if (settings.SkipAlreadyProcessed && stem.EndsWith(affix, StringComparison.OrdinalIgnoreCase))
             return new OutputPlan(null, null, string.Empty, true, "already processed", null);
 
-        var container = settings.OutputContainer;
-        var audioCodec = audio?.CodecName.ToLowerInvariant();
+        string extension;
 
-        if (audioCodec is not null &&
-            (MkvOnlyAudioCodecs.Contains(audioCodec) || (container == OutputContainer.Mp4 && !Mp4FriendlyAudio(audioCodec))))
+        if (FileTypes.IsAudioFile(inputPath))
         {
-            container = OutputContainer.Mkv;
+            extension = AudioFileExtension(inputPath).TrimStart('.');
+        }
+        else
+        {
+            var container = settings.OutputContainer;
+            var codecs = new[] { audio }.Concat(otherAudio ?? [])
+                .Where(stream => stream is not null)
+                .Select(stream => stream!.CodecName.ToLowerInvariant());
+
+            if (codecs.Any(codec => MkvOnlyAudioCodecs.Contains(codec) || (container == OutputContainer.Mp4 && !Mp4FriendlyAudio(codec))))
+                container = OutputContainer.Mkv;
+
+            extension = container == OutputContainer.Mp4 ? "mp4" : "mkv";
         }
 
-        var extension = container == OutputContainer.Mp4 ? "mp4" : "mkv";
         var output = Path.Combine(directory, stem + affix + "." + extension);
         var partial = Path.Combine(directory, stem + affix + ".partial." + extension);
 

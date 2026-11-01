@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CinemaGuard.Core.Settings;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Cinema_Guard.Views;
@@ -10,8 +11,8 @@ namespace Cinema_Guard.Views;
 public sealed partial class FilterPage : Page
 {
     private readonly AppSettings _settings = App.Settings.Current;
-    private readonly List<(CheckBox Box, string Root)> _fullBoxes = [];
-    private readonly List<(CheckBox Box, string Root)> _singleBoxes = [];
+    private readonly List<FamilyRow> _fullRows = [];
+    private readonly List<FamilyRow> _singleRows = [];
 
     public FilterPage()
     {
@@ -25,33 +26,134 @@ public sealed partial class FilterPage : Page
 
         foreach (var root in FilterCatalog.Roots)
         {
-            AddFamily(FullWordsPanel, _fullBoxes, _settings.WordsFull, root);
-            AddFamily(SingleWordsPanel, _singleBoxes, _settings.WordsSingle, root);
+            _fullRows.Add(new FamilyRow(FullWordsPanel, _settings.WordsFull, root, ShowCount));
+            _singleRows.Add(new FamilyRow(SingleWordsPanel, _settings.WordsSingle, root, ShowCount));
         }
 
         FullCustom.Text = string.Join(Environment.NewLine, _settings.WordsFull.Where(word => !familyWords.Contains(word)));
         SingleCustom.Text = string.Join(Environment.NewLine, _settings.WordsSingle.Where(word => !familyWords.Contains(word)));
 
-        Status.Text = $"{_settings.WordsFull.Count + _settings.WordsSingle.Count} word(s) active";
+        ShowCount();
     }
 
-    private void AddFamily(StackPanel panel, List<(CheckBox, string)> boxes, List<string> words, string root)
+    private void ShowCount() => Status.Text = $"{_settings.WordsFull.Count + _settings.WordsSingle.Count} word(s) active";
+
+    /// <summary>
+    /// One word family: its checkbox toggles every spelling (half-ticked when only some are on), and the
+    /// spellings button opens the family so single spellings can be turned off, such as one that is
+    /// fine in your house while the rest are not.
+    /// </summary>
+    private sealed class FamilyRow
     {
-        var box = new CheckBox
+        private readonly List<string> _words;
+        private readonly string _root;
+        private readonly Action _changed;
+        private readonly CheckBox _family;
+        private readonly TextBlock? _countText;
+        private readonly List<(CheckBox Box, string Word)> _spellings = [];
+
+        public FamilyRow(StackPanel panel, List<string> words, string root, Action changed)
         {
-            Content = FilterCatalog.DisplayName(root),
-            Tag = root,
-            MinWidth = 0,
-            IsChecked = FilterCatalog.IsFamilyEnabled(words, root),
-        };
+            _words = words;
+            _root = root;
+            _changed = changed;
 
-        ToolTipService.SetToolTip(box, FamilyToolTip(root));
+            var family = FilterCatalog.Associated(root);
 
-        box.Checked += (_, _) => FilterCatalog.EnableFamily(words, root, true);
-        box.Unchecked += (_, _) => FilterCatalog.EnableFamily(words, root, false);
+            _family = new CheckBox { Content = FilterCatalog.DisplayName(root), Tag = root, MinWidth = 0 };
+            ToolTipService.SetToolTip(_family, FamilyToolTip(root));
 
-        panel.Children.Add(box);
-        boxes.Add((box, root));
+            // Click, not Checked/Unchecked: a half-ticked family turns fully on, which the box's own cycle would not do.
+            _family.Click += (_, _) =>
+            {
+                FilterCatalog.EnableFamily(_words, _root, FilterCatalog.FamilyState(_words, _root) != true);
+                Refresh();
+            };
+
+            var header = new Grid { ColumnSpacing = 4 };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.Children.Add(_family);
+            panel.Children.Add(header);
+
+            if (family.Count < 2)
+            {
+                Refresh();
+                return;
+            }
+
+            var details = new VariableSizedWrapGrid
+            {
+                Orientation = Orientation.Horizontal,
+                ItemWidth = 170,
+                Margin = new Thickness(28, 0, 0, 8),
+                Visibility = Visibility.Collapsed,
+            };
+
+            foreach (var word in family)
+            {
+                var box = new CheckBox { Content = FilterCatalog.DisplayName(word), MinWidth = 0 };
+                box.Click += (_, _) =>
+                {
+                    FilterCatalog.EnableWord(_words, word, box.IsChecked == true);
+                    Refresh();
+                };
+
+                details.Children.Add(box);
+                _spellings.Add((box, word));
+            }
+
+            var chevron = new FontIcon { Glyph = "", FontSize = 10 };
+            _countText = new TextBlock { Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"], VerticalAlignment = VerticalAlignment.Center };
+
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            content.Children.Add(_countText);
+            content.Children.Add(chevron);
+
+            var expand = new Button
+            {
+                Content = content,
+                Style = (Style)Application.Current.Resources["TransparentButtonStyle"],
+                Padding = new Thickness(8, 2, 8, 2),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            AutomationProperties.SetName(expand, $"Spellings of {FilterCatalog.DisplayName(root)}");
+            ToolTipService.SetToolTip(expand, "Choose single spellings");
+
+            expand.Click += (_, _) =>
+            {
+                var open = details.Visibility == Visibility.Collapsed;
+                details.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+                chevron.Glyph = open ? "" : "";
+            };
+
+            Grid.SetColumn(expand, 1);
+            header.Children.Add(expand);
+            panel.Children.Add(details);
+
+            Refresh();
+        }
+
+        /// <summary>Selects or clears the whole family (Select all / none).</summary>
+        public void Set(bool enable)
+        {
+            FilterCatalog.EnableFamily(_words, _root, enable);
+            Refresh();
+        }
+
+        public bool IsFullyOn => FilterCatalog.FamilyState(_words, _root) == true;
+
+        private void Refresh()
+        {
+            var family = FilterCatalog.Associated(_root);
+            _family.IsChecked = FilterCatalog.FamilyState(_words, _root);
+
+            foreach (var (box, word) in _spellings) box.IsChecked = _words.Contains(word);
+            if (_countText is not null) _countText.Text = $"{family.Count(_words.Contains)} of {family.Count}";
+
+            _changed();
+        }
     }
 
     /// <summary>Every spelling the checkbox toggles, masked like the label.</summary>
@@ -71,15 +173,15 @@ public sealed partial class FilterPage : Page
         return new ToolTip { Content = panel, MaxWidth = 460 };
     }
 
-    private void ToggleAllFull_Click(object sender, RoutedEventArgs e) => ToggleAll(_fullBoxes);
+    private void ToggleAllFull_Click(object sender, RoutedEventArgs e) => ToggleAll(_fullRows);
 
-    private void ToggleAllSingle_Click(object sender, RoutedEventArgs e) => ToggleAll(_singleBoxes);
+    private void ToggleAllSingle_Click(object sender, RoutedEventArgs e) => ToggleAll(_singleRows);
 
-    private static void ToggleAll(List<(CheckBox Box, string Root)> boxes)
+    private static void ToggleAll(List<FamilyRow> rows)
     {
-        var allChecked = boxes.All(entry => entry.Box.IsChecked == true);
+        var allChecked = rows.All(row => row.IsFullyOn);
 
-        foreach (var (box, _) in boxes) box.IsChecked = !allChecked;
+        foreach (var row in rows) row.Set(!allChecked);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)

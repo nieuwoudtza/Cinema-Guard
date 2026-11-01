@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CinemaGuard.Core.Ffmpeg;
 using CinemaGuard.Core.Media;
 using CinemaGuard.Core.Tools;
@@ -21,10 +22,9 @@ public sealed class SubloaderService(IProcessRunner runner)
             cancellationToken: cancellationToken);
 
         var output = result.StdOut + "\n" + result.StdErr;
-        var quota = output.Contains("quota will be renewed", StringComparison.OrdinalIgnoreCase);
 
-        if (quota)
-            return new DownloadResult(false, null, true, "OpenSubtitles' daily quota is used up; it renews tomorrow.");
+        if (QuotaMessage(output) is { } quota)
+            return new DownloadResult(false, null, true, quota);
 
         if (result.Cancelled) throw new OperationCanceledException(cancellationToken);
 
@@ -51,6 +51,36 @@ public sealed class SubloaderService(IProcessRunner runner)
         {
             return new DownloadResult(false, null, false, ex.Message);
         }
+    }
+
+    private static readonly string[] QuotaPhrases =
+    [
+        "quota will be renewed", "download quota", "downloads quota", "maximum downloads", "download limit",
+        "downloads limit", "allowed downloads", "too many requests",
+    ];
+
+    private static readonly Regex RenewRegex = new(@"renewed in\s+(?<when>[^.\r\n]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex AllowedRegex = new(@"allowed\s+(?<count>\d+)\s+subtitles", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// OpenSubtitles' daily download limit, said plainly with when it resets (when the site says so), or
+    /// null when the output is about something else. Free accounts get a handful of downloads a day; the
+    /// API words it as "You have downloaded your allowed 20 subtitles for 24h. Your quota will be renewed in 5 hours".
+    /// </summary>
+    public static string? QuotaMessage(string output)
+    {
+        if (!QuotaPhrases.Any(phrase => output.Contains(phrase, StringComparison.OrdinalIgnoreCase))) return null;
+
+        var message = AllowedRegex.Match(output) is { Success: true } allowed
+            ? $"OpenSubtitles' daily download limit ({allowed.Groups["count"].Value} subtitles) is reached."
+            : "OpenSubtitles' daily download limit is reached.";
+
+        message += RenewRegex.Match(output) is { Success: true } renew
+            ? $" It resets in {renew.Groups["when"].Value.Trim()}."
+            : " It resets within a day.";
+
+        return message + " Until then, use the video's own subtitles or Generate subtitles instead.";
     }
 
     private static string? LastLine(string text)

@@ -73,6 +73,27 @@ public static class FilterCatalog
         return family.Any(words.Contains);
     }
 
+    /// <summary>Every spelling of the family on (true), none (false), or only some of them (null).</summary>
+    public static bool? FamilyState(IReadOnlyCollection<string> words, string root)
+    {
+        var family = Associated(root);
+        var enabled = family.Count(words.Contains);
+        return enabled == family.Count ? true : enabled == 0 ? false : null;
+    }
+
+    /// <summary>One spelling on or off, leaving the rest of its family as it is.</summary>
+    public static void EnableWord(ICollection<string> words, string word, bool enable)
+    {
+        if (enable)
+        {
+            if (!words.Contains(word)) words.Add(word);
+        }
+        else
+        {
+            words.Remove(word);
+        }
+    }
+
     /// <summary>How the old filter page showed a word: one vowel replaced with '*'.</summary>
     public static string DisplayName(string word)
     {

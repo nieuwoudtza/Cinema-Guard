@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -124,16 +124,7 @@ public partial class App : Application
                 {
                     if (Directory.Exists(path))
                     {
-                        try
-                        {
-                            items.AddRange(Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-                                .Where(file => FileTypes.IsSupportedVideo(Path.GetExtension(file)))
-                                .Select(file => new MediaItem(file)));
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warn($"Could not read {path}: {ex.Message}");
-                        }
+                        items.AddRange(FileTypes.MediaInFolder(path, recursive: true).Select(file => new MediaItem(file)));
                     }
                     else if (File.Exists(path))
                     {
@@ -143,8 +134,9 @@ public partial class App : Application
 
                 foreach (var item in items)
                 {
-                    item.GenerateSubtitles = ShouldGenerate(item, settings);
-                    item.ExtractSubtitles = settings.ExtractSubtitlesForNewFiles;
+                    var audioFile = FileTypes.IsAudioFile(item.InputPath);
+                    item.GenerateSubtitles = audioFile || ShouldGenerate(item, settings);
+                    item.ExtractSubtitles = settings.ExtractSubtitlesForNewFiles && !audioFile;
                 }
 
                 if (items.Count > 0)
@@ -160,8 +152,8 @@ public partial class App : Application
                 {
                     // Still replace last-run.json, so a caller never reads the previous run's result.
                     exitCode = HeadlessExitCodes.NoFiles;
-                    HeadlessReport.Write(items, TimeSpan.Zero, "No video files in the arguments.", exitCode, arguments.ReportPath);
-                    Log.Info("Headless run: no video files in the arguments.");
+                    HeadlessReport.Write(items, TimeSpan.Zero, "No video or audio files in the arguments.", exitCode, arguments.ReportPath);
+                    Log.Info("Headless run: no video or audio files in the arguments.");
                 }
             }
             catch (Exception ex)

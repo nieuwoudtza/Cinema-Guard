@@ -13,17 +13,58 @@ public sealed record LaunchArguments(
     IReadOnlyList<string> Paths,
     string? ReportPath = null,
     bool Progress = false,
-    string? CancelEvent = null)
+    string? CancelEvent = null,
+    bool Help = false)
 {
     public const string ReportOption = "--report";
     public const string ProgressOption = "--progress";
     public const string CancelEventOption = "--cancel-event";
+
+    /// <summary>
+    /// What `--help` prints and Settings → Command line shows: every option, the exit codes and where the
+    /// report goes. Kept beside the parser so the two cannot drift apart.
+    /// </summary>
+    public static string HelpText { get; } = """
+        Cinema Guard command line
+
+        Usage
+          Cinema Guard.exe [files or folders...]            Open the queue with these files
+          Cinema Guard.exe [files or folders...] -start     Censor them without a window, then exit
+
+        Files can be videos (MKV, MP4, AVI, M4V, MOV, WEBM, TS, ...) or audio files (MP3, M4B, M4A,
+        FLAC, WAV, OGG, OPUS, ...). A folder adds its videos, subfolders included with -start; a folder
+        with no videos adds its audio files instead. A second launch hands its files to the open window.
+
+        Options
+          -start, --start           Run headless: no window and no dialogs. Uses the saved settings.
+          --report <path>           Also write the run's JSON report to <path> (with -start).
+          --progress                One JSON line on stdout per change of step or whole percent, at most
+                                    one a second, plus every status change (with -start):
+                                    {"file":"...","status":"Running","step":"Encoding","progress":42.5}
+          --cancel-event <name>     Stop the run when the caller signals this named event (Local\...).
+                                    The file being worked on is cancelled cleanly (with -start).
+          -h, --help, -?, /?        Show this text and exit.
+
+        Report
+          Every headless run writes %LOCALAPPDATA%\CinemaGuard\logs\last-run.json: per file the input,
+          status, message, output and hit count, plus the summary and exit code.
+
+        Exit codes (-start)
+          0   Every file succeeded or was skipped
+          1   At least one file failed or was cancelled
+          2   No video or audio files in the arguments
+          3   The run itself crashed (see the log in %LOCALAPPDATA%\CinemaGuard\logs)
+
+        Example
+          "Cinema Guard.exe" "D:\Films\Heat (1995).mkv" -start --report "D:\Films\heat.json"
+        """;
 
     public static LaunchArguments Parse(IEnumerable<string> arguments)
     {
         var paths = new List<string>();
         var headless = false;
         var progress = false;
+        var help = false;
         string? report = null;
         string? cancelEvent = null;
 
@@ -35,6 +76,10 @@ public sealed record LaunchArguments(
             if (Is(argument, "-start") || Is(argument, "--start"))
             {
                 headless = true;
+            }
+            else if (Is(argument, "--help") || Is(argument, "-h") || Is(argument, "-?") || Is(argument, "/?"))
+            {
+                help = true;
             }
             else if (Is(argument, ProgressOption))
             {
@@ -59,7 +104,8 @@ public sealed record LaunchArguments(
             paths,
             string.IsNullOrWhiteSpace(report) ? null : report,
             progress,
-            string.IsNullOrWhiteSpace(cancelEvent) ? null : cancelEvent);
+            string.IsNullOrWhiteSpace(cancelEvent) ? null : cancelEvent,
+            help);
     }
 
     private static bool Is(string argument, string option) =>
@@ -75,7 +121,7 @@ public static class HeadlessExitCodes
     /// <summary>At least one file failed or was cancelled; the report says which.</summary>
     public const int Failed = 1;
 
-    /// <summary>The arguments named no video file.</summary>
+    /// <summary>The arguments named no video or audio file.</summary>
     public const int NoFiles = 2;
 
     /// <summary>The run itself crashed; the log has the exception.</summary>

@@ -22,7 +22,9 @@ It's made for families, for watching with kids, or for anyone who would rather s
 - **Clean subtitles as well.** It can add subtitles with the filtered words blanked out.
 - **Shows its work.** Click the hit count to see every word it found and exactly when.
 - **Works through a whole library.** Drop in films or entire folders and let it run; one problem
-  file never stops the rest.
+  file never stops the rest. It can put the PC to sleep, hibernate, restart or shut it down when the queue is done.
+- **Audiobooks and podcasts too.** MP3, M4B, FLAC and other audio files are cleaned the same way
+  and keep their format, cover art and chapters.
 
 ## Download
 
@@ -73,7 +75,7 @@ this repository.
 |---|---|
 | `Cinema Guard/` | WinUI 3 app (unpackaged, x64) |
 | `src/CinemaGuard.Core/` | All logic: subtitles, speech engines, FFmpeg, pipeline. No UI. |
-| `tests/CinemaGuard.Core.Tests/` | xUnit tests (170) |
+| `tests/CinemaGuard.Core.Tests/` | xUnit tests (196) |
 | `installer/CinemaGuard.Installer/` | `CinemaGuard-Setup.exe`: folder choice, desktop shortcut, then Velopack install |
 | `publish.ps1` | Builds a release for the WaveBit update server |
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
@@ -85,7 +87,7 @@ this repository.
 dotnet build "Cinema Guard.slnx" -c Debug
 dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
 
-& ".\Cinema Guard\bin\Debug\net10.0-windows10.0.19041.0\win-x64\Cinema Guard.exe"
+& ".\Cinema Guard\bin\x64\Debug\net10.0-windows10.0.19041.0\win-x64\Cinema Guard.exe"
 ```
 
 Publish a self-contained build (the .NET runtime is inside the folder; Windows App SDK is bundled):
@@ -108,7 +110,14 @@ Build and pack an update release:
 - **Generate subtitles** means "transcribe this file with the speech model"; **Extract subtitles**
   means "use the subtitle track inside the video". New files start with whatever Settings → Files
   says (Generate off, Extract on by default).
-- Folders ask whether to include subfolders.
+- Folders ask whether to include subfolders. A folder's audio files are only added when it holds no
+  video, so a film's `theme.mp3` is left alone.
+- **Audio files** (MP3, M4B, M4A, AAC, FLAC, WAV, OGG, OPUS, WMA) are always transcribed and written
+  back in their own format (AAC and WMA become M4A), with cover art, chapters and tags; they get no
+  subtitle tracks.
+- **When finished** (the footer) sleeps, hibernates, restarts or shuts down the PC after the queue has run to the end,
+  with a one-minute countdown that can be cancelled. It is chosen per run and never saved; Stop
+  never triggers it.
 - **Peek** (the hit count) lists words, counts, exact times, and whether each came from the English
   model, the multilingual model, the subtitle file, or the source's own masking.
 
@@ -117,6 +126,18 @@ Output is `<name><affix>.<mp4|mkv>` (default `Movie_CG.mp4`). Beside the video, 
 - `Movie.srt` - the sidecar the app reads (yours, saved from the video, or downloaded).
 - `Movie_Full_CG.srt`, `Movie_Censored_CG.srt` - when not embedding.
 - `Movie.oneword.srt` - only with "Also write one-word subtitles".
+
+Inside the output, after the censored audio and the Full/Censored subtitles:
+
+- The source's **forced** subtitle track (Settings → Subtitles, on by default), masked with the
+  filter and flagged forced. An image track (PGS, VobSub) cannot be masked and is copied; MP4
+  cannot hold one at all, which the row's message then says.
+- With "Keep the other audio tracks" / "Keep the other subtitle tracks" (off by default), the
+  rest of the source's tracks, copied unchanged and **not censored**. They never take the default
+  flag from the censored track. MKV also keeps the font attachments ASS tracks need; a kept DTS or
+  TrueHD track moves the output to MKV.
+
+The **Filter** page's families open (the "3 of 7" count) to turn single spellings on or off.
 
 Transcripts, the generated subtitles and the foreign-dialogue report are kept in
 `%LOCALAPPDATA%\CinemaGuard\cache\<film>-<hash>\` so a re-run skips the speech model ("Keep
@@ -145,7 +166,12 @@ from the Models page. The first run asks whether to download the recommended pai
 ```
 Cinema Guard.exe "D:\Films\Heat (1995).mkv"          # opens the queue with the file
 Cinema Guard.exe "D:\Films\Heat (1995).mkv" -start   # headless run, no window, no dialogs
+Cinema Guard.exe --help                              # every option and exit code (also -h, -?, /?)
 ```
+
+`--help` prints to the console it was started from (or a redirected stdout), and shows a message
+box when there is none. The same text (`LaunchArguments.HelpText`) is in Settings → Command line →
+Show options, with a Copy button.
 
 `-start` writes `%LOCALAPPDATA%\CinemaGuard\logs\last-run.json` with the result of every file. This
 is the mode to call from another program (MediaPilot, for example). A second GUI launch hands its
@@ -160,7 +186,7 @@ A headless run also takes these options:
 | `--cancel-event <name>` | Stops the run when the caller signals this named event (`Local\…`). The file being worked on is cancelled cleanly, so no `.partial` output is left behind |
 
 Its exit code: `0` every file succeeded or was skipped, `1` at least one failed or was cancelled,
-`2` no video files in the arguments, `3` the run itself crashed (see the log). The report carries the
+`2` no video or audio files in the arguments, `3` the run itself crashed (see the log). The report carries the
 same `exitCode`.
 
 While a headless run is alive, the window does not install a downloaded update (on restart, on close

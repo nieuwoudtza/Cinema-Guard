@@ -12,7 +12,7 @@
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,12">
             <TextBlock Text="Filter" Style="{StaticResource PageTitleStyle}" />
             <TextBlock
-                Text="A family toggles every spelling of a word. Sentence words mute the whole line; single words mute only the word itself."
+                Text="A family toggles every spelling of a word; the count beside it opens the family to turn single spellings on or off. Sentence words mute the whole line; single words mute only the word itself."
                 Style="{StaticResource MutedStyle}"
                 TextWrapping="Wrap" />
         </StackPanel>

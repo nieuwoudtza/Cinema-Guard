@@ -18,11 +18,16 @@ public static class OutputValidator
         MediaProbe input,
         int expectedAudioStreams,
         int expectedSubtitleStreams,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool expectVideo = true)
     {
         var info = new FileInfo(outputPath);
         if (!info.Exists) return new ValidationResult(false, "the file was not written", false);
-        if (info.Length < 1024 * 1024) return new ValidationResult(false, "the file is smaller than 1 MB", false);
+
+        // An audio file can be small (a short podcast at 64 kb/s); the duration check below still applies.
+        var minimum = expectVideo ? 1024 * 1024 : 16 * 1024;
+        if (info.Length < minimum)
+            return new ValidationResult(false, expectVideo ? "the file is smaller than 1 MB" : "the file is smaller than 16 KB", false);
 
         var probe = await runner.RunAsync(new ProcessSpec(ffprobePath, FfmpegCommands.Probe(outputPath)),
             cancellationToken: cancellationToken);
@@ -42,7 +47,7 @@ public static class OutputValidator
             return new ValidationResult(false, ex.Message, false);
         }
 
-        if (!parsed.VideoStreams.Any())
+        if (expectVideo && !parsed.VideoStreams.Any())
             return new ValidationResult(false, "the output has no video stream", false);
 
         var audioCount = parsed.AudioStreams.Count();

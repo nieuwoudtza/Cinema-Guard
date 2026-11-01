@@ -259,8 +259,11 @@ public static class HitCollector
         double padAfter,
         string label)
     {
-        // Phonon already timed this word precisely; the subtitle estimate adds nothing.
-        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - from) <= SnapWindowSeconds &&
+        // Phonon already timed this word precisely; the subtitle estimate adds nothing. Compared where the
+        // fit puts the subtitle word (the transcript's timeline): drifted subtitles are seconds off by the
+        // end of a film, and the raw time would match a different word.
+        var mapped = fit.Map(from);
+        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - mapped) <= SnapWindowSeconds &&
                                                 (string.Equals(h.Label, label, StringComparison.Ordinal) || label == SwearMatcher.MaskedLabel));
         if (duplicate) return;
 

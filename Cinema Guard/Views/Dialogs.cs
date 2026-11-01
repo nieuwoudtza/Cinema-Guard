@@ -133,6 +133,92 @@ public static class Dialogs
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
+    /// <summary>The command-line options (the same text as --help), selectable, with a Copy button that leaves the dialog open.</summary>
+    public static async Task ShowCommandLineAsync(XamlRoot root, string text)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = "Command-line options",
+            Content = new ScrollViewer
+            {
+                Content = new TextBlock
+                {
+                    Text = text,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    FontSize = 12,
+                    IsTextSelectionEnabled = true,
+                },
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollMode = ScrollMode.Auto,
+                MaxHeight = 520,
+            },
+            PrimaryButtonText = "Copy",
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        // ContentDialog's own MaxWidth (548) would wrap the 100-column text.
+        dialog.Resources["ContentDialogMaxWidth"] = 820.0;
+
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            args.Cancel = true;
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(text);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+            dialog.PrimaryButtonText = "Copied";
+        };
+
+        await dialog.ShowAsync();
+    }
+
+    /// <summary>
+    /// Counts down and returns true when the time runs out or the user presses the action button; false
+    /// on Cancel. For "When finished": a sleep or shutdown nobody can stop would be a nasty surprise.
+    /// </summary>
+    public static async Task<bool> CountdownAsync(XamlRoot root, string title, Func<int, string> message, int seconds, string actionText)
+    {
+        var text = new TextBlock { Text = message(seconds), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 };
+        var proceed = false;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = title,
+            Content = text,
+            PrimaryButtonText = actionText,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        var left = seconds;
+        var timer = dialog.DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromSeconds(1);
+        timer.Tick += (_, _) =>
+        {
+            left--;
+            text.Text = message(Math.Max(0, left));
+            if (left > 0) return;
+
+            timer.Stop();
+            proceed = true;
+            dialog.Hide();
+        };
+
+        timer.Start();
+
+        try
+        {
+            var result = await dialog.ShowAsync();
+            return proceed || result == ContentDialogResult.Primary;
+        }
+        finally
+        {
+            timer.Stop();
+        }
+    }
+
     /// <summary>Every model or engine delete goes through here. Cancel is the default button.</summary>
     public static async Task<bool> ConfirmDeleteAsync(XamlRoot root, string name, long bytes, string? extra = null)
     {

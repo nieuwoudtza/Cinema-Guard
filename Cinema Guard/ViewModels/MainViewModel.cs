@@ -32,6 +32,9 @@ public sealed record PeekContent(string Header, string Subtitle, IReadOnlyList<P
 
 public enum GenerateMode { All, Missing, None }
 
+/// <summary>The Queue page's "When finished" choice, in its order.</summary>
+public enum QueueFinishedAction { Nothing, Sleep, Hibernate, Restart, ShutDown }
+
 /// <summary>The queue window's state: the file list, the run loop, and the per-row actions.</summary>
 public sealed partial class MainViewModel : ObservableObject
 {
@@ -119,7 +122,7 @@ public sealed partial class MainViewModel : ObservableObject
     public SettingsService SettingsService => _settingsService;
     public AppSettings Settings => _settingsService.Current;
 
-    [ObservableProperty] private string _statusText = "Drop video files here, or add them with the buttons above.";
+    [ObservableProperty] private string _statusText = "Drop video or audio files here, or add them with the buttons above.";
     [ObservableProperty] private double _overallProgress;
 
     /// <summary>"37% overall · file 2 of 5" in the footer while the queue runs; empty otherwise.</summary>
@@ -157,7 +160,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (Directory.Exists(path))
             {
-                foreach (var file in EnumerateVideos(path, recursive)) AddFile(file);
+                foreach (var file in FileTypes.MediaInFolder(path, recursive)) AddFile(file);
             }
             else
             {
@@ -166,21 +169,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         UpdateAggregates();
-    }
-
-    private static IEnumerable<string> EnumerateVideos(string folder, bool recursive)
-    {
-        try
-        {
-            return Directory.EnumerateFiles(folder, "*", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
-                .Where(file => FileTypes.IsSupportedVideo(Path.GetExtension(file)))
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"Could not read {folder}: {ex.Message}");
-            return [];
-        }
     }
 
     private void AddFile(string path)
@@ -197,15 +185,17 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (!File.Exists(full) || !FileTypes.IsSupportedVideo(Path.GetExtension(full))) return;
+        if (!File.Exists(full) || !FileTypes.IsSupportedMedia(Path.GetExtension(full))) return;
         if (Items.Any(item => string.Equals(item.Item.InputPath, full, StringComparison.OrdinalIgnoreCase))) return;
 
         var media = new MediaItem(full);
+        var audioFile = FileTypes.IsAudioFile(full);
 
         // Files an earlier version left beside the video go into Cinema Guard's cache straight away.
+        // An audio file has no subtitles of its own: the speech model is the only way to hear its words.
         media.MoveLegacyFiles();
-        media.GenerateSubtitles = Settings.GenerateSubtitlesForNewFiles;
-        media.ExtractSubtitles = Settings.ExtractSubtitlesForNewFiles;
+        media.GenerateSubtitles = Settings.GenerateSubtitlesForNewFiles || audioFile;
+        media.ExtractSubtitles = Settings.ExtractSubtitlesForNewFiles && !audioFile;
         media.SubtitleSource = media.SubtitleSourceOnDisk();
         media.ExpectedSeconds = RunHistory.Default.EstimateFile(full, media.GenerateSubtitles);
 
@@ -304,28 +294,36 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---------------------------------------------------------------- run
 
-    public async Task StartAsync()
+    /// <summary>What to do with the PC once the queue has run to the end. Not saved: it is chosen for one run.</summary>
+    [ObservableProperty] private int _whenFinishedIndex;
+
+    public QueueFinishedAction WhenFinished => (QueueFinishedAction)Math.Clamp(WhenFinishedIndex, 0, (int)QueueFinishedAction.ShutDown);
+
+    /// <summary>Runs the queue. True when it ran to the end: not stopped, not crashed, not refused at the start.</summary>
+    public async Task<bool> StartAsync()
     {
-        if (IsBusy) return;
+        if (IsBusy) return false;
 
         if (Items.Count == 0)
         {
-            ShowSummary("No media queued", "Add at least one video file before starting.", InfoBarSeverity.Warning);
-            return;
+            ShowSummary("No media queued", "Add at least one video or audio file before starting.", InfoBarSeverity.Warning);
+            return false;
         }
 
         if (Settings.WordsFull.Count == 0 && Settings.WordsSingle.Count == 0)
         {
             ShowSummary("No filter applied", "Open the Filter page and select at least one word.", InfoBarSeverity.Warning);
-            return;
+            return false;
         }
 
         var problems = Settings.Validate();
         if (problems.Count > 0)
         {
             ShowSummary("Check the settings", string.Join(" ", problems), InfoBarSeverity.Error);
-            return;
+            return false;
         }
+
+        var completed = false;
 
         IsRunning = true;
         IsSummaryOpen = false;
@@ -356,6 +354,9 @@ public sealed partial class MainViewModel : ObservableObject
                 summary.Fits ? "Finished" : "Finished with problems",
                 $"{summary.Describe()} in {Format(summary.Elapsed)}.",
                 summary.Fits ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+
+            // Stop pressed near the end still counts as stopped.
+            completed = !token.IsCancellationRequested;
         }
         catch (OperationCanceledException)
         {
@@ -378,6 +379,8 @@ public sealed partial class MainViewModel : ObservableObject
             _cancellation = null;
             UpdateAggregates();
         }
+
+        return completed;
     }
 
     /// <summary>Stops the queue, or the subtitle action that is running.</summary>
@@ -535,6 +538,7 @@ public sealed partial class MainViewModel : ObservableObject
         var downloaded = 0;
         var attempted = 0;
         var quota = false;
+        string? quotaMessage = null;
         var cancelled = false;
 
         try
@@ -559,8 +563,14 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     var result = await _subloader.DownloadAsync(subloader, item.InputPath, Settings.PreferredLanguage, token);
                     quota = result.QuotaReached;
+                    if (quota) quotaMessage = result.Message;
 
-                    if (result.Success && result.SubtitlePath is not null)
+                    if (quota)
+                    {
+                        item.StatusText = "Daily download limit reached";
+                        item.Message = result.Message;
+                    }
+                    else if (result.Success && result.SubtitlePath is not null)
                     {
                         item.CustomSubtitlePath = result.SubtitlePath;
                         item.SubtitleSource = "Downloaded";
@@ -610,9 +620,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         ShowSummary(
-            quota ? "OpenSubtitles quota reached" : "Download subtitles",
+            quota ? "OpenSubtitles download limit reached" : "Download subtitles",
             quota
-                ? "The daily quota is used up; the rest were left alone."
+                ? $"{quotaMessage} {downloaded}/{attempted} downloaded before that; the rest were left alone."
                 : $"{downloaded}/{attempted} downloaded successfully.",
             quota || downloaded < attempted ? InfoBarSeverity.Warning : InfoBarSeverity.Success);
     }

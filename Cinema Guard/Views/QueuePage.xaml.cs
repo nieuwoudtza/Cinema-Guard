@@ -174,7 +174,7 @@ public sealed partial class QueuePage : Page
             ViewMode = PickerViewMode.List,
         };
 
-        foreach (var extension in FileTypes.VideoExtensions) picker.FileTypeFilter.Add(extension);
+        foreach (var extension in FileTypes.MediaExtensions) picker.FileTypeFilter.Add(extension);
 
         WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHandle);
 
@@ -225,7 +225,60 @@ public sealed partial class QueuePage : Page
             return;
         }
 
-        await ViewModel.StartAsync();
+        var completed = await ViewModel.StartAsync();
+        if (completed) await RunFinishedActionAsync();
+    }
+
+    /// <summary>"When finished": sleep, hibernate, restart or shut down after a minute's warning that can be cancelled. Used once, then back to nothing.</summary>
+    private static async Task RunFinishedActionAsync()
+    {
+        var viewModel = App.MainViewModel;
+        if (viewModel is null || viewModel.WhenFinished == QueueFinishedAction.Nothing) return;
+
+        var action = viewModel.WhenFinished;
+        viewModel.WhenFinishedIndex = 0;
+
+        var (title, will, button) = action switch
+        {
+            QueueFinishedAction.Sleep => ("Going to sleep", "go to sleep", "Sleep now"),
+            QueueFinishedAction.Hibernate => ("Hibernating", "hibernate", "Hibernate now"),
+            QueueFinishedAction.Restart => ("Restarting", "restart", "Restart now"),
+            _ => ("Shutting down", "shut down", "Shut down now"),
+        };
+
+        var root = App.Shell?.Content?.XamlRoot;
+        bool proceed;
+
+        try
+        {
+            proceed = root is not null && await Dialogs.CountdownAsync(
+                root,
+                title,
+                seconds => $"The queue has finished. The PC will {will} in {seconds} second{(seconds == 1 ? string.Empty : "s")}.",
+                60,
+                button);
+        }
+        catch (Exception ex)
+        {
+            // Another dialog is open (only one can be): nobody is watching, so go ahead, with Windows'
+            // own one-minute warning for a restart or shutdown.
+            CinemaGuard.Core.Logging.Log.Warn($"Could not show the countdown: {ex.Message}");
+            Run(action, windowsDelaySeconds: 60);
+            return;
+        }
+
+        if (proceed) Run(action, windowsDelaySeconds: 0);
+
+        static void Run(QueueFinishedAction action, int windowsDelaySeconds)
+        {
+            switch (action)
+            {
+                case QueueFinishedAction.Sleep: PowerActions.Sleep(); break;
+                case QueueFinishedAction.Hibernate: PowerActions.Hibernate(); break;
+                case QueueFinishedAction.Restart: PowerActions.Restart(windowsDelaySeconds); break;
+                case QueueFinishedAction.ShutDown: PowerActions.ShutDown(windowsDelaySeconds); break;
+            }
+        }
     }
 
     private void SpeechModel_Click(object sender, RoutedEventArgs e) => App.Shell?.NavigateTo("models");
@@ -359,7 +412,7 @@ public sealed partial class QueuePage : Page
         {
             switch (item)
             {
-                case StorageFile file when FileTypes.IsSupportedVideo(Path.GetExtension(file.Path)):
+                case StorageFile file when FileTypes.IsSupportedMedia(Path.GetExtension(file.Path)):
                     videos.Add(file.Path);
                     break;
                 case StorageFile file when FileTypes.IsSupportedSubtitle(Path.GetExtension(file.Path)):

@@ -21,6 +21,10 @@ public sealed class MediaStreamInfo
     public bool IsComment { get; init; }
     public bool IsHearingImpaired { get; init; }
     public bool IsVisualImpaired { get; init; }
+
+    /// <summary>Cover art in an audio file (or an MP4): a still picture stored as a video stream.</summary>
+    public bool IsAttachedPicture { get; init; }
+
     public string? Language { get; init; }
     public string? Title { get; init; }
 
@@ -52,6 +56,9 @@ public sealed class MediaProbe
     public IEnumerable<MediaStreamInfo> AudioStreams => Streams.Where(s => s.IsAudio);
     public IEnumerable<MediaStreamInfo> VideoStreams => Streams.Where(s => s.IsVideo);
     public IEnumerable<MediaStreamInfo> SubtitleStreams => Streams.Where(s => s.IsSubtitle);
+
+    /// <summary>The cover art of an audio file, if it has one.</summary>
+    public MediaStreamInfo? CoverArt => VideoStreams.FirstOrDefault(s => s.IsAttachedPicture);
 
     public int AudioOrdinal(MediaStreamInfo stream) =>
         AudioStreams.TakeWhile(s => s.Index != stream.Index).Count();
@@ -117,8 +124,10 @@ public static class MediaProbeParser
             IsComment = GetInt(disposition, "comment") == 1,
             IsHearingImpaired = GetInt(disposition, "hearing_impaired") == 1,
             IsVisualImpaired = GetInt(disposition, "visual_impaired") == 1,
+            IsAttachedPicture = GetInt(disposition, "attached_pic") == 1,
             Language = NormaliseLanguage(GetString(tags, "language")),
-            Title = GetString(tags, "title"),
+            // MP4 keeps a track's title as "name".
+            Title = GetString(tags, "title") ?? GetString(tags, "name"),
         };
     }
 

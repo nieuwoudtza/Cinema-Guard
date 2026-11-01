@@ -108,7 +108,7 @@ public class FfmpegCommandTests
             Subtitles = [new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng")],
         });
 
-        Assert.Equal("mov_text", ArgList.Next(mp4, "-c:s"));
+        Assert.Equal("mov_text", ArgList.Next(mp4, "-c:s:0"));
         Assert.Equal("default", ArgList.Next(mp4, "-disposition:s:0"));
 
         var mkv = FfmpegCommands.Encode(Request(probe) with
@@ -121,9 +121,143 @@ public class FfmpegCommandTests
             ],
         });
 
-        Assert.Equal("srt", ArgList.Next(mkv, "-c:s"));
+        // MP4 players that show only the handler name still see "Full", not "SubtitleHandler".
+        Assert.Contains("handler_name=Full", mp4);
+        Assert.DoesNotContain(mkv, argument => argument.StartsWith("handler_name=", StringComparison.Ordinal));
+
+        Assert.Equal("srt", ArgList.Next(mkv, "-c:s:0"));
+        Assert.Equal("srt", ArgList.Next(mkv, "-c:s:1"));
         Assert.Equal("default", ArgList.Next(mkv, "-disposition:s:0"));
         Assert.Equal("0", ArgList.Next(mkv, "-disposition:s:1"));
+    }
+
+    private static MediaProbe RemuxProbe() => MediaProbeParser.Parse("""
+        {
+          "streams": [
+            { "index": 0, "codec_type": "video", "codec_name": "hevc" },
+            { "index": 1, "codec_type": "audio", "codec_name": "truehd", "channels": 8, "disposition": { "default": 1 }, "tags": { "language": "eng" } },
+            { "index": 2, "codec_type": "audio", "codec_name": "ac3", "channels": 6, "tags": { "language": "eng" } },
+            { "index": 3, "codec_type": "audio", "codec_name": "ac3", "channels": 2, "disposition": { "comment": 1 }, "tags": { "language": "eng", "title": "Commentary" } },
+            { "index": 4, "codec_type": "subtitle", "codec_name": "subrip", "tags": { "language": "eng" } },
+            { "index": 5, "codec_type": "subtitle", "codec_name": "subrip", "disposition": { "forced": 1 }, "tags": { "language": "eng" } },
+            { "index": 6, "codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle", "tags": { "language": "fre" } }
+          ],
+          "format": { "format_name": "matroska", "duration": "7200" }
+        }
+        """, @"C:\media\remux.mkv");
+
+    [Fact]
+    public void CopiesTheOtherTracksAfterTheCensoredOnesWithoutTheirDefaultFlag()
+    {
+        var probe = RemuxProbe();
+        var others = probe.AudioStreams.Where(stream => stream.Index != 1).ToList();
+        var request = Request(probe) with
+        {
+            OutputPath = @"C:\media\remux_CG.partial.mkv",
+            Container = OutputContainer.Mkv,
+            Ranges = [new TimeRange(1, 2)],
+            FilterScriptPath = @"C:\tmp\mute.txt",
+            KeepOriginalAudio = true,
+            ExtraAudio = others,
+            Subtitles = [new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng")],
+            ExtraSubtitles = [probe.Streams[6]],
+        };
+
+        var arguments = FfmpegCommands.Encode(request);
+
+        // Muted, original, then the two others; the copies never take the default.
+        Assert.Contains("0:2", arguments);
+        Assert.Contains("0:3", arguments);
+        Assert.Equal("copy", ArgList.Next(arguments, "-c:a:2"));
+        Assert.Equal("copy", ArgList.Next(arguments, "-c:a:3"));
+        Assert.Equal("-default", ArgList.Next(arguments, "-disposition:a:2"));
+        Assert.Equal("-default", ArgList.Next(arguments, "-disposition:a:3"));
+        Assert.Equal(4, request.ExpectedAudioStreams);
+
+        // The written subtitle first, then the copied PGS track with its fonts' attachments.
+        Assert.Contains("0:6", arguments);
+        Assert.Equal("srt", ArgList.Next(arguments, "-c:s:0"));
+        Assert.Equal("copy", ArgList.Next(arguments, "-c:s:1"));
+        Assert.Equal("-default", ArgList.Next(arguments, "-disposition:s:1"));
+        Assert.Contains("0:t?", arguments);
+        Assert.Equal(2, request.ExpectedSubtitleStreams);
+    }
+
+    [Fact]
+    public void AForcedTrackIsFlaggedForcedAndNeverTheDefault()
+    {
+        var probe = Probe();
+        var arguments = FfmpegCommands.Encode(Request(probe) with
+        {
+            Subtitles =
+            [
+                new SubtitleInput(@"C:\tmp\forced.srt", "Forced", "eng", Forced: true),
+                new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng"),
+            ],
+        });
+
+        Assert.Equal("forced", ArgList.Next(arguments, "-disposition:s:0"));
+        Assert.Equal("default", ArgList.Next(arguments, "-disposition:s:1"));
+    }
+
+    [Fact]
+    public void Mp4KeepsOnlyTextSubtitleTracks()
+    {
+        var probe = RemuxProbe();
+
+        Assert.True(FfmpegCommands.CanKeepSubtitle(probe.Streams[4], OutputContainer.Mp4));
+        Assert.False(FfmpegCommands.CanKeepSubtitle(probe.Streams[6], OutputContainer.Mp4));
+        Assert.True(FfmpegCommands.CanKeepSubtitle(probe.Streams[6], OutputContainer.Mkv));
+        Assert.False(FfmpegCommands.CanKeepSubtitle(probe.Streams[1], OutputContainer.Mkv));
+    }
+
+    private static MediaProbe AudiobookProbe() => MediaProbeParser.Parse("""
+        {
+          "streams": [
+            { "index": 0, "codec_type": "audio", "codec_name": "aac", "channels": 1, "bit_rate": "64000", "tags": { "language": "eng" } },
+            { "index": 1, "codec_type": "video", "codec_name": "mjpeg", "disposition": { "attached_pic": 1 } }
+          ],
+          "format": { "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "36000" }
+        }
+        """, @"C:\books\book.m4b");
+
+    [Fact]
+    public void AnAudioFileKeepsItsCoverAndFormatAndHasNoFilmOrSubtitles()
+    {
+        var probe = AudiobookProbe();
+        var request = Request(probe) with
+        {
+            OutputPath = @"C:\books\book_CG.partial.m4b",
+            Ranges = [new TimeRange(1, 2)],
+            FilterScriptPath = @"C:\tmp\mute.txt",
+            KeepOriginalAudio = true,
+            Subtitles = [new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng")],
+            AudioFileExtension = ".m4b",
+        };
+
+        var arguments = FfmpegCommands.Encode(request);
+
+        Assert.DoesNotContain("0:v:0", arguments);
+        Assert.Equal("0:1", ArgList.Next(arguments, "-map"));
+        Assert.Equal("attached_pic", ArgList.Next(arguments, "-disposition:v:0"));
+        Assert.Equal("aac", ArgList.Next(arguments, "-c:a:0"));
+        Assert.Equal("64k", ArgList.Next(arguments, "-b:a:0"));
+        Assert.Equal("1", ArgList.Next(arguments, "-ac:a:0"));
+        Assert.DoesNotContain(@"C:\tmp\full.srt", arguments);
+        Assert.DoesNotContain("-metadata:s:a:0", arguments);
+        Assert.DoesNotContain("-aspect", arguments);
+        Assert.Equal(1, request.ExpectedAudioStreams);
+        Assert.Equal(0, request.ExpectedSubtitleStreams);
+    }
+
+    [Fact]
+    public void OggHasNoRoomForCoverArt()
+    {
+        var probe = AudiobookProbe();
+        var arguments = FfmpegCommands.Encode(Request(probe) with { AudioFileExtension = ".ogg" });
+
+        Assert.DoesNotContain("-disposition:v:0", arguments);
+        Assert.DoesNotContain("0:1", arguments);
     }
 
     [Fact]

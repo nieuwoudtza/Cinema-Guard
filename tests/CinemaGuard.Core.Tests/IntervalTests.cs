@@ -138,6 +138,23 @@ public class HitCollectorTests
     }
 
     [Fact]
+    public void ADriftedSubtitleWordIsComparedWhereTheFitPutsIt()
+    {
+        // The subtitles run 5 s early: the line at 10-12 s is spoken at 15-17 s.
+        var fit = new SyncFit(true, 1.0, 5.0, 100, 0.1);
+        var cue = new Cue { StartSeconds = 10, EndSeconds = 12, Text = "FUCK THIS" };
+
+        // A different FUCK the model heard at 10.5 s is not this word: the estimate stays, at 15 s.
+        var other = new Hit(10.5, 10.8, "FUCK", HitSource.English, false);
+        var kept = Assert.Single(HitCollector.FromSubtitles([cue], fit, Options(single: ["FUCK"]), [other]));
+        Assert.Equal(14.944, kept.Start, 3);
+
+        // The model's own hit at 15.5 s is the same word: the estimate is redundant.
+        var same = new Hit(15.5, 15.8, "FUCK", HitSource.English, false);
+        Assert.Empty(HitCollector.FromSubtitles([cue], fit, Options(single: ["FUCK"]), [same]));
+    }
+
+    [Fact]
     public void AlignsSubtitlesTimedForAnotherFrameRate()
     {
         var cues = new List<Cue>();

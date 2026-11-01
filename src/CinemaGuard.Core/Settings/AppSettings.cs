@@ -37,6 +37,12 @@ public sealed class AppSettings
     public bool EmbedSubtitles { get; set; } = true;
     public string CensorCharacter { get; set; } = "*";
 
+    /// <summary>The source's forced subtitle tracks (foreign lines only), masked with the filter and kept.</summary>
+    public bool KeepForcedSubtitles { get; set; } = true;
+
+    /// <summary>The source's other subtitle tracks, copied unchanged. They are not censored, so off by default.</summary>
+    public bool KeepOtherSubtitles { get; set; }
+
     // Filter
     public List<string> WordsFull { get; set; } = [];
     public List<string> WordsSingle { get; set; } = [];
@@ -98,6 +104,10 @@ public sealed class AppSettings
     public bool MuteVocalsOnly { get; set; }
     public bool ForceSameAudioEncoding { get; set; } = true;
     public bool KeepOriginalAudio { get; set; }
+
+    /// <summary>The source's other audio tracks (other languages, commentary), copied unchanged. Not censored, so off by default.</summary>
+    public bool KeepOtherAudioTracks { get; set; }
+
     public bool SkipMediaNoSwearing { get; set; } = true;
     public bool DeleteOriginalFiles { get; set; }
 

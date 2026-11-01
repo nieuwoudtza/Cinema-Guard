@@ -83,6 +83,14 @@
                         <controls:SettingRow Header="Splice foreign-language cues" Description="Write a .mixed.srt that uses the multilingual transcript where the English model heard no English.">
                             <ToggleSwitch IsOn="{x:Bind ViewModel.S.SpliceForeignCues, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
+
+                        <controls:SettingRow Header="Keep forced subtitles" Description="The video's forced track (the lines shown when characters speak another language) goes into the output too, masked like the others and flagged forced. An image track (PGS, VobSub) cannot be masked and is copied as it is; MP4 cannot hold one at all.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepForcedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        </controls:SettingRow>
+
+                        <controls:SettingRow Header="Keep the other subtitle tracks" Description="Copy the video's other subtitle tracks (other languages, SDH) into the output unchanged. They are not censored. MP4 keeps only the text ones; MKV keeps all of them.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        </controls:SettingRow>
                     </StackPanel>
                 </Border>
 
@@ -179,7 +187,11 @@
                             <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOriginalAudio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Keep the source codec" Description="Re-encode the muted track with the source codec and bitrate instead of AAC.">
+                        <controls:SettingRow Header="Keep the other audio tracks" Description="Copy the video's other audio tracks (other languages, commentary, a second English mix) after the censored one, unchanged. They are not censored, and the censored track stays the default.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherAudioTracks, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        </controls:SettingRow>
+
+                        <controls:SettingRow Header="Keep the source codec" Description="Re-encode the muted track with the source codec and bitrate instead of AAC. Dolby Atmos cannot be re-encoded, so the muted track loses it (7.1 TrueHD and E-AC3 become lossless FLAC). To keep Atmos as well, turn on Keep the original audio: that copy is untouched.">
                             <ToggleSwitch IsOn="{x:Bind ViewModel.S.ForceSameAudioEncoding, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
                     </StackPanel>
@@ -235,6 +247,14 @@
                             <Button Content="Open Tools" Click="OpenTools_Click" />
                         </controls:SettingRow>
                     </StackPanel>
+                </Border>
+
+                <!-- ============================ COMMAND LINE -->
+                <TextBlock Text="COMMAND LINE" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <controls:SettingRow Header="Command-line options" Description="Censor files from a script or another program without opening the window (-start), with a JSON report, progress lines and a cancel signal. Cinema Guard.exe --help prints the same list.">
+                        <Button Content="Show options" Click="CommandLine_Click" />
+                    </controls:SettingRow>
                 </Border>
 
                 <!-- ============================ ABOUT: the one place the app's version is shown -->

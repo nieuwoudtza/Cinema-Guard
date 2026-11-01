@@ -87,6 +87,46 @@ public static class AudioCodecPolicy
         return new AudioPlan(arguments, encoder, lossless);
     }
 
+    /// <summary>
+    /// The encoder for an audio-only file, decided by the format it is written back in (see
+    /// <see cref="Media.OutputPathPolicy.AudioFileExtension"/>): an MP3 stays MP3, an audiobook stays AAC.
+    /// </summary>
+    public static AudioPlan PlanAudioFile(MediaStreamInfo audio, string extension)
+    {
+        var channels = audio.Channels ?? 2;
+        var sourceCodec = audio.CodecName.ToLowerInvariant();
+
+        var encoder = extension.ToLowerInvariant() switch
+        {
+            ".mp3" => "libmp3lame",
+            ".m4a" or ".m4b" => sourceCodec == "alac" ? "alac" : "aac",
+            ".flac" => "flac",
+            ".wav" => sourceCodec.StartsWith("pcm_", StringComparison.Ordinal) ? sourceCodec : "pcm_s16le",
+            ".ogg" => sourceCodec == "opus" ? "libopus" : "libvorbis",
+            ".opus" => "libopus",
+            _ => "aac",
+        };
+
+        var lossless = encoder is "alac" or "flac" || encoder.StartsWith("pcm_", StringComparison.Ordinal);
+        var arguments = new List<string> { "-c:a:0", encoder, "-ac:a:0", channels.ToString(CultureInfo.InvariantCulture) };
+
+        if (!lossless)
+        {
+            // Audiobooks are often 64 kb/s mono: keep the source's rate rather than the film defaults.
+            var bitrate = audio.BitRate is >= 32_000 and var source
+                ? (int)Math.Min(source / 1000, 1536)
+                : Bitrate(audio, encoder, channels);
+
+            if (bitrate > 0)
+            {
+                arguments.Add("-b:a:0");
+                arguments.Add(bitrate.ToString(CultureInfo.InvariantCulture) + "k");
+            }
+        }
+
+        return new AudioPlan(arguments, encoder, lossless);
+    }
+
     private static int Bitrate(MediaStreamInfo audio, string encoder, int channels)
     {
         if (audio.BitRate is > 0 and var source)
@@ -101,6 +141,7 @@ public static class AudioCodecPolicy
             "ac3" => channels >= 6 ? 640 : 448,
             "eac3" => channels >= 6 ? 640 : 448,
             "libopus" => Math.Clamp(96 * channels, 128, 512),
+            "libvorbis" => Math.Clamp(96 * channels, 128, 512),
             "libmp3lame" => 320,
             _ => 0,
         };

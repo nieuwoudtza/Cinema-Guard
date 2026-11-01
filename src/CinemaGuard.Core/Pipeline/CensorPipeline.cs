@@ -76,8 +76,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (!File.Exists(item.InputPath))
             throw new PipelineException("The input file no longer exists.");
 
-        if (!FileTypes.IsSupportedVideo(Path.GetExtension(item.InputPath)))
+        if (!FileTypes.IsSupportedMedia(Path.GetExtension(item.InputPath)))
             throw new PipelineException($"Unsupported file type '{Path.GetExtension(item.InputPath)}'.");
+
+        var audioFile = FileTypes.IsAudioFile(item.InputPath);
 
         EnsureReadable(item.InputPath);
 
@@ -102,7 +104,12 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         item.Audio = audio;
 
-        var plan = OutputPathPolicy.Decide(item.InputPath, settings, audio.Stream);
+        // The source's other audio tracks, copied unchanged after the censored one when asked for.
+        List<MediaStreamInfo> otherAudio = !audioFile && settings.KeepOtherAudioTracks
+            ? probe.AudioStreams.Where(stream => stream.Index != audio.Stream.Index).ToList()
+            : [];
+
+        var plan = OutputPathPolicy.Decide(item.InputPath, settings, audio.Stream, otherAudio);
         if (plan.Skip)
         {
             Skip(item, plan.SkipReason ?? "already processed");
@@ -227,10 +234,27 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         // Subtitle files this run creates next to the video; removed again if the run is cancelled.
         var createdSubtitles = new List<string>();
 
+        var container = plan.Extension == "mp4" ? OutputContainer.Mp4 : OutputContainer.Mkv;
+        var notes = new List<string>();
+
         try
         {
-            var subtitleInputs = WriteSubtitleFiles(
-                item, settings, hits, outputCues, ReferenceEquals(outputCues, subtitleCues), work, createdSubtitles);
+            // An audio file carries no subtitle tracks; its transcript stays in the cache.
+            var subtitleInputs = audioFile
+                ? []
+                : WriteSubtitleFiles(item, settings, hits, outputCues, ReferenceEquals(outputCues, subtitleCues), work, createdSubtitles);
+
+            List<MediaStreamInfo> keptSubtitles = [];
+
+            if (!audioFile)
+            {
+                var kept = await KeepSourceSubtitlesAsync(item, probe, settings, container, ffmpeg, work, cancellationToken);
+                subtitleInputs.AddRange(kept.Forced);
+                keptSubtitles = kept.Copied;
+
+                if (kept.LeftOut > 0)
+                    notes.Add($"{kept.LeftOut} image subtitle track{(kept.LeftOut == 1 ? " was" : "s were")} left out: MP4 cannot hold them (choose MKV in Settings to keep them).");
+            }
 
             SetStatus(item, "Encoding");
 
@@ -293,8 +317,11 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 FilterScriptPath = filterScript,
                 KeepOriginalAudio = settings.KeepOriginalAudio,
                 ForceSameAudioEncoding = settings.ForceSameAudioEncoding,
-                Container = plan.Extension == "mp4" ? OutputContainer.Mp4 : OutputContainer.Mkv,
+                Container = container,
                 Subtitles = subtitleInputs,
+                ExtraAudio = otherAudio,
+                ExtraSubtitles = keptSubtitles,
+                AudioFileExtension = audioFile ? OutputPathPolicy.AudioFileExtension(item.InputPath) : null,
                 Language = item.Language,
                 AudioTitle = ranges.Count == 0 ? "Original" : vocals ? "Cinema Guard (Vocals Only)" : "Cinema Guard",
                 AspectRatio = settings.AspectRatio,
@@ -326,9 +353,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
                 SetStatus(item, "Checking the output");
 
-                var expectedAudioStreams = ranges.Count > 0 && settings.KeepOriginalAudio ? 2 : 1;
                 var validation = await OutputValidator.ValidateAsync(
-                    runner, ffprobe, partialPath, probe, expectedAudioStreams, subtitleInputs.Count, cancellationToken);
+                    runner, ffprobe, partialPath, probe, request.ExpectedAudioStreams, request.ExpectedSubtitleStreams,
+                    cancellationToken, expectVideo: !audioFile);
 
                 if (validation.Cancelled) throw new OperationCanceledException(cancellationToken);
                 if (!validation.Ok) throw new PipelineException($"The output is not usable: {validation.Error}");
@@ -362,6 +389,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         if (english?.Truncated == true) summary += " The transcript was truncated; some words may be missing.";
         if (item.FallbackNote is not null) summary += " " + item.FallbackNote;
+        foreach (var note in notes) summary += " " + note;
 
         item.Message = summary;
 
@@ -429,7 +457,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
             var outcome = await TranscribeStepAsync(
                 item, fileProgress, PrimaryPassStep, primaryPass, wav, features, settings,
-                line => SetStatus(item, $"{label}: {Shorten(line, 80)}"),
+                line => ShowEngineLine(item, label, line),
                 cancellationToken);
 
             english = outcome.Result;
@@ -448,7 +476,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 SetStatus(item, "Transcribing (multilingual pass)");
                 var outcome = await TranscribeStepAsync(
                     item, fileProgress, SecondPassStep, secondPass, wav, features, settings,
-                    line => SetStatus(item, "Transcribing (multilingual pass): " + Shorten(line, 80)),
+                    line => ShowEngineLine(item, "Transcribing (multilingual pass)", line),
                     cancellationToken);
 
                 multilingual = outcome.Result;
@@ -583,6 +611,66 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (result.CensoredPath is not null) inputs.Add(new SubtitleInput(result.CensoredPath, "Censored", item.Language));
 
         return inputs;
+    }
+
+    private sealed record KeptSubtitles(List<SubtitleInput> Forced, List<MediaStreamInfo> Copied, int LeftOut);
+
+    /// <summary>
+    /// The source's own subtitle tracks that go into the output. A forced text track is masked like the
+    /// others and embedded flagged forced; a forced image track cannot be masked, so it is copied. With
+    /// "Keep the other subtitle tracks", the rest are copied unchanged. MP4 cannot hold image tracks:
+    /// those are counted as left out.
+    /// </summary>
+    private async Task<KeptSubtitles> KeepSourceSubtitlesAsync(
+        MediaItem item, MediaProbe probe, AppSettings settings, OutputContainer container, string ffmpeg, WorkFolder work,
+        CancellationToken cancellationToken)
+    {
+        var forced = new List<SubtitleInput>();
+        var copied = new List<MediaStreamInfo>();
+        var leftOut = 0;
+
+        var entries = settings.WordsFull.Concat(settings.WordsSingle).ToList();
+        var censor = settings.CensorCharacter.Length > 0 ? settings.CensorCharacter[0] : '*';
+
+        foreach (var stream in probe.SubtitleStreams)
+        {
+            var wanted = stream.IsForced ? settings.KeepForcedSubtitles : settings.KeepOtherSubtitles;
+            if (!wanted) continue;
+
+            if (stream.IsForced && stream.IsTextSubtitle)
+            {
+                var extracted = await _extractor.ExtractAsync(ffmpeg, probe, stream, work.File($"forced-{stream.Index}.srt"), cancellationToken);
+                var cues = extracted is null ? null : TryReadSubtitleFile(extracted);
+
+                if (cues is not { Count: > 0 })
+                {
+                    Log.Warn($"{item.Stem}: the forced subtitle track #{stream.Index} could not be read; it is left out.");
+                    continue;
+                }
+
+                var masked = cues.Select(cue =>
+                {
+                    var copy = cue.Clone();
+                    copy.Text = CensoredSubtitleWriter.Mask(cue.Text, entries, censor, out _);
+                    return copy;
+                }).ToList();
+
+                var path = work.File($"forced-{stream.Index}-masked.srt");
+                SrtWriter.Write(path, masked);
+
+                forced.Add(new SubtitleInput(
+                    path,
+                    string.IsNullOrWhiteSpace(stream.Title) ? "Forced" : stream.Title,
+                    stream.Language ?? item.Language,
+                    Forced: true));
+                continue;
+            }
+
+            if (FfmpegCommands.CanKeepSubtitle(stream, container)) copied.Add(stream);
+            else leftOut++;
+        }
+
+        return new KeptSubtitles(forced, copied, leftOut);
     }
 
     private async Task<Dictionary<string, IReadOnlyList<TimeRange>>> BuildVocalsRangesAsync(
@@ -961,6 +1049,17 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         item.Progress = percent;
         Raise(item);
+    }
+
+    /// <summary>
+    /// A line the speech engine printed, after the step's label. The transcript itself arrives as a JSON
+    /// line on the same stream; that is data, not news for the row (or a --progress reader).
+    /// </summary>
+    private void ShowEngineLine(MediaItem item, string label, string line)
+    {
+        if (line.TrimStart().StartsWith('{')) return;
+
+        SetStatus(item, $"{label}: {Shorten(line, 80)}");
     }
 
     private void SetStatus(MediaItem item, string text)

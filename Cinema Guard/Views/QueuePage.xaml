@@ -360,9 +360,9 @@
                 IsHitTestVisible="False"
                 Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                 <FontIcon Glyph="&#xE714;" FontSize="44" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                <TextBlock Text="Drop video files here" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+                <TextBlock Text="Drop video or audio files here" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
                 <TextBlock
-                    Text="MKV, MP4, AVI, M4V, MOV, WEBM, TS · or use Add files."
+                    Text="MKV, MP4, AVI, M4V, MOV, WEBM, TS · MP3, M4B, M4A, FLAC · or use Add files."
                     Style="{StaticResource MutedStyle}"
                     HorizontalAlignment="Center" />
             </StackPanel>
@@ -371,22 +371,40 @@
         <!-- Footer -->
         <Grid Grid.Row="5" Margin="0,12,0,0" RowDefinitions="Auto,Auto">
             <ProgressBar Value="{x:Bind ViewModel.OverallProgress, Mode=OneWay}" Maximum="100" Height="3" />
-            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,8,0,0">
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,8,0,0">
                 <TextBlock
                     Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
                     Style="{StaticResource MutedStyle}"
+                    VerticalAlignment="Center"
                     TextTrimming="CharacterEllipsis" />
+                <!-- Chosen per run, never saved: a shutdown left on from last week would be a surprise. -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="When finished" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
+                    <ComboBox
+                        MinWidth="130"
+                        SelectedIndex="{x:Bind ViewModel.WhenFinishedIndex, Mode=TwoWay}"
+                        AutomationProperties.Name="When the queue has finished"
+                        ToolTipService.ToolTip="What to do with the PC once every file is done. You get a minute's warning to cancel. Stopping the queue never triggers it.">
+                        <ComboBoxItem Content="Do nothing" />
+                        <ComboBoxItem Content="Sleep" />
+                        <ComboBoxItem Content="Hibernate" />
+                        <ComboBoxItem Content="Restart" />
+                        <ComboBoxItem Content="Shut down" />
+                    </ComboBox>
+                </StackPanel>
                 <!-- Every queued file together; finished, skipped and failed files count as done. -->
                 <TextBlock
-                    Grid.Column="1"
+                    Grid.Column="2"
                     Text="{x:Bind ViewModel.OverallProgressText, Mode=OneWay}"
                     Style="{StaticResource BodyStrongTextBlockStyle}"
                     Margin="12,0,0,0"
+                    VerticalAlignment="Center"
                     AutomationProperties.Name="Overall progress" />
                 <TextBlock
-                    Grid.Column="2"
+                    Grid.Column="3"
                     Text="{x:Bind ViewModel.ElapsedText, Mode=OneWay}"
                     Style="{StaticResource MutedStyle}"
+                    VerticalAlignment="Center"
                     Margin="12,0,0,0" />
             </Grid>
         </Grid>
