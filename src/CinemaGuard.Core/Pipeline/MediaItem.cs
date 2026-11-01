@@ -22,13 +22,22 @@ public sealed class MediaItem
     public string Folder { get; }
 
     public string SidecarPath => Path.ChangeExtension(InputPath, ".srt");
-    public string GeneratedPath => Path.ChangeExtension(InputPath, ".generated.srt");
+
+    /// <summary>The legacy one-word subtitles: written beside the video only when the user asks for them (Settings).</summary>
     public string OneWordPath => Path.ChangeExtension(InputPath, ".oneword.srt");
-    public string EnglishCachePath => Path.ChangeExtension(InputPath, ".phonon-en.json");
-    public string MultilingualCachePath => Path.ChangeExtension(InputPath, ".phonon-ml.json");
+
+    /// <summary>
+    /// Where this file's transcripts, generated subtitles and language report live: Cinema Guard's own
+    /// folder, one subfolder per video (by its full path), so nothing is left beside the video.
+    /// </summary>
+    public string CacheFolder => Path.Combine(CacheRoot, CacheKey(InputPath));
+
+    public string GeneratedPath => Path.Combine(CacheFolder, "generated.srt");
+    public string EnglishCachePath => Path.Combine(CacheFolder, "phonon-en.json");
+    public string MultilingualCachePath => Path.Combine(CacheFolder, "phonon-ml.json");
 
     /// <summary>The transcript of any model other than the two Phonon 2.5 ones (keyed on the model inside).</summary>
-    public string TranscriptCachePath => Path.ChangeExtension(InputPath, ".transcript.json");
+    public string TranscriptCachePath => Path.Combine(CacheFolder, "transcript.json");
 
     /// <summary>Phonon 2.5 keeps its original cache names, so files done before the Models page are not redone.</summary>
     public string CachePathFor(string cacheKey) => cacheKey switch
@@ -40,10 +49,117 @@ public sealed class MediaItem
 
     public bool HasAnyTranscriptCache =>
         File.Exists(EnglishCachePath) || File.Exists(MultilingualCachePath) || File.Exists(TranscriptCachePath);
-    public string LanguageReportPath => Path.ChangeExtension(InputPath, ".languages.json");
+    public string LanguageReportPath => Path.Combine(CacheFolder, "languages.json");
+
+    public static string CacheRoot { get; set; } = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CinemaGuard", "cache");
+
+    /// <summary>"Film name-1a2b3c4d5e6f7a8b": readable, and unique per full path.</summary>
+    internal static string CacheKey(string inputPath)
+    {
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(inputPath.ToUpperInvariant())))[..16].ToLowerInvariant();
+
+        var stem = Path.GetFileNameWithoutExtension(inputPath);
+        if (stem.Length > 40) stem = stem[..40];
+        return $"{stem.TrimEnd(' ', '.')}-{hash}";
+    }
+
+    /// <summary>Creates the cache folder before something is written to it.</summary>
+    public void EnsureCacheFolder() => Directory.CreateDirectory(CacheFolder);
+
+    /// <summary>
+    /// Earlier versions left the transcripts and generated subtitles beside the video. They are moved
+    /// into the cache folder (still reused, no longer cluttering the folder). Never throws.
+    /// </summary>
+    public void MoveLegacyFiles()
+    {
+        (string Legacy, string Cache)[] moves =
+        [
+            (Path.ChangeExtension(InputPath, ".generated.srt"), GeneratedPath),
+            (Path.ChangeExtension(InputPath, ".phonon-en.json"), EnglishCachePath),
+            (Path.ChangeExtension(InputPath, ".phonon-ml.json"), MultilingualCachePath),
+            (Path.ChangeExtension(InputPath, ".transcript.json"), TranscriptCachePath),
+            (Path.ChangeExtension(InputPath, ".languages.json"), LanguageReportPath),
+        ];
+
+        foreach (var (legacy, cache) in moves)
+        {
+            try
+            {
+                if (!File.Exists(legacy)) continue;
+
+                EnsureCacheFolder();
+                if (File.Exists(cache) && File.GetLastWriteTimeUtc(cache) >= File.GetLastWriteTimeUtc(legacy)) File.Delete(legacy);
+                else File.Move(legacy, cache, overwrite: true);
+
+                Log.Info($"Moved {Path.GetFileName(legacy)} into Cinema Guard's cache.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Could not move {legacy} into the cache: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>Removes this file's transcripts and generated subtitles. Never throws.</summary>
+    public void DeleteCache()
+    {
+        try
+        {
+            if (Directory.Exists(CacheFolder)) Directory.Delete(CacheFolder, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not delete the cache for {Stem}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Removes cache folders not used for <paramref name="maxAge"/> (a run touches its folder). Never throws.</summary>
+    public static void CleanupCache(TimeSpan maxAge)
+    {
+        try
+        {
+            if (!Directory.Exists(CacheRoot)) return;
+            var cutoff = DateTime.UtcNow - maxAge;
+
+            foreach (var directory in Directory.EnumerateDirectories(CacheRoot))
+            {
+                try
+                {
+                    if (Directory.GetLastWriteTimeUtc(directory) >= cutoff) continue;
+                    Directory.Delete(directory, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"Could not delete the old cache {directory}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not scan the cache: {ex.Message}");
+        }
+    }
+
+    /// <summary>Marks the cache as used, so the 30-day clean-up keeps it.</summary>
+    public void TouchCache()
+    {
+        try
+        {
+            if (Directory.Exists(CacheFolder)) Directory.SetLastWriteTimeUtc(CacheFolder, DateTime.UtcNow);
+        }
+        catch (Exception)
+        {
+            // Only affects when it is cleaned up.
+        }
+    }
 
     public string? CustomSubtitlePath { get; set; }
     public bool GenerateSubtitles { get; set; } = true;
+
+    /// <summary>Read the subtitle track inside the video and use it to find words (no file is written beside it).</summary>
+    public bool ExtractSubtitles { get; set; } = true;
     public string SubtitleSource { get; set; } = "None";
 
     /// <summary>
@@ -65,6 +181,39 @@ public sealed class MediaItem
     public MediaStatus Status { get; set; } = MediaStatus.Waiting;
     public string StatusText { get; set; } = "Waiting";
     public double Progress { get; set; }
+
+    /// <summary>The seconds this file is expected to take, which weighs it in the queue's overall percentage.</summary>
+    public double ExpectedSeconds { get; set; } = 1;
+
+    /// <summary>When the last run of this file started and finished; the row shows the time between.</summary>
+    public DateTimeOffset? StartedAt { get; set; }
+
+    public DateTimeOffset? FinishedAt { get; set; }
+
+    /// <summary>Time spent on the last run: up to now while it runs, the total once it has finished.</summary>
+    public TimeSpan? Elapsed => StartedAt is { } start ? (FinishedAt ?? DateTimeOffset.Now) - start : null;
+
+    /// <summary>
+    /// The time this file still needs: waiting, its expected time; running, a blend of what is left of the
+    /// expected time and the pace so far, trusting the pace more the further it gets. Null once finished.
+    /// </summary>
+    public TimeSpan? EstimatedRemaining
+    {
+        get
+        {
+            if (Status == MediaStatus.Waiting) return TimeSpan.FromSeconds(ExpectedSeconds);
+            if (Status != MediaStatus.Running || Elapsed is not { } elapsed) return null;
+
+            var done = Math.Clamp(Progress / 100, 0, 1);
+            var byPlan = ExpectedSeconds * (1 - done);
+
+            // Before any step reports progress (probing, starting the engine) there is no pace yet.
+            if (done < 0.02) return TimeSpan.FromSeconds(byPlan);
+
+            var byPace = elapsed.TotalSeconds * (1 - done) / done;
+            return TimeSpan.FromSeconds(done * byPace + (1 - done) * byPlan);
+        }
+    }
     public string? Message { get; set; }
     public string? OutputPath { get; set; }
 

@@ -90,6 +90,11 @@ public sealed class SpeechService(ModelManager models, PhononService phonon, Too
         return hardware.Avx2 ? WhisperRuntime.Cpu : WhisperRuntime.CpuNoAvx;
     }
 
+    /// <summary>The saved choice runs a Phonon pass on the GPU through Docker, and this PC has the NVIDIA card for it.</summary>
+    public bool UsesDockerGpu(AppSettings settings) =>
+        (settings.Hardware ?? models.Hardware).HasNvidia &&
+        Plan(settings).Passes.Any(pass => pass.Model?.Family == SpeechFamily.Phonon && pass.UseGpu);
+
     /// <summary>Why this pass cannot run right now (in words for the queue row), or null when it can.</summary>
     public string? Problem(SpeechPass pass, AppSettings settings)
     {
@@ -109,8 +114,11 @@ public sealed class SpeechService(ModelManager models, PhononService phonon, Too
         return models.IsInstalled(model, variant) ? null : $"{model.Name} isn't downloaded. Open Models to download it.";
     }
 
+    /// <param name="progress">The pass's own percentage (0-100), for the engines that report one (Whisper, Parakeet).
+    /// When it is given, the percentage is not also sent to <paramref name="status"/>.</param>
     public async Task<SpeechOutcome> TranscribeAsync(
-        SpeechPass pass, string wavPath, AppSettings settings, Action<string>? status, CancellationToken cancellationToken)
+        SpeechPass pass, string wavPath, AppSettings settings, Action<string>? status, CancellationToken cancellationToken,
+        Action<double>? progress = null)
     {
         if (Problem(pass, settings) is { } problem) throw new PhononException(problem);
 
@@ -143,7 +151,11 @@ public sealed class SpeechService(ModelManager models, PhononService phonon, Too
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var transcript = await _host.TranscribeAsync(request,
-            value => status?.Invoke($"{value:0}%"),
+            value =>
+            {
+                if (progress is not null) progress(value);
+                else status?.Invoke($"{value:0}%");
+            },
             line => Log.Info($"{model.Name}: {line}"),
             cancellationToken);
 

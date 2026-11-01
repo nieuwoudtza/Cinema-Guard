@@ -108,7 +108,7 @@ public static class LegacySettingsImporter
             if (GetBool(root, "KeepOriginalAudio") is { } keep) settings.KeepOriginalAudio = keep;
             if (GetBool(root, "SkipMediaNoSwearing") is { } skip) settings.SkipMediaNoSwearing = skip;
             if (GetBool(root, "DeleteOriginalFiles") is { } delete) settings.DeleteOriginalFiles = delete;
-            if (GetBool(root, "AlwaysGenerateSubtitles") is { } generate) settings.AlwaysGenerateSubtitles = generate;
+            if (GetBool(root, "AlwaysGenerateSubtitles") is { } generate) settings.GenerateSubtitlesForNewFiles = generate;
             if (GetBool(root, "AlwaysOverwriteSubtitles") is { } overwrite) settings.AlwaysOverwriteSubtitles = overwrite;
 
             settings.Normalise();

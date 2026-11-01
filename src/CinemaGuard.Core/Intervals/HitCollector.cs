@@ -3,13 +3,29 @@ using CinemaGuard.Core.Subtitles;
 
 namespace CinemaGuard.Core.Intervals;
 
+/// <param name="EstimatedPadBeforeMs">Single words only the subtitles have: around the guessed spot in the line.</param>
+/// <param name="WordPadBeforeMs">Single words the speech model timed (or one-word subtitles).</param>
+/// <param name="LinePadBeforeMs">Sentence-list words: around the whole subtitle line or the model's sentence.</param>
 public sealed record HitCollectorOptions(
     IReadOnlyList<string> WordsFull,
     IReadOnlyList<string> WordsSingle,
     int EstimatedPadBeforeMs,
     int EstimatedPadAfterMs,
     int WordPadBeforeMs,
-    int WordPadAfterMs);
+    int WordPadAfterMs,
+    int LinePadBeforeMs = 0,
+    int LinePadAfterMs = 0)
+{
+    public static HitCollectorOptions From(Settings.AppSettings settings) => new(
+        settings.WordsFull,
+        settings.WordsSingle,
+        settings.EstimatedPadBeforeMs,
+        settings.EstimatedPadAfterMs,
+        settings.WordPadBeforeMs,
+        settings.WordPadAfterMs,
+        settings.LinePadBeforeMs,
+        settings.LinePadAfterMs);
+}
 
 public sealed record HitSet(List<Hit> Hits, List<TimeRange> Ranges, SyncFit Fit)
 {
@@ -83,6 +99,8 @@ public static class HitCollector
 
         var padBefore = options.WordPadBeforeMs / 1000.0;
         var padAfter = options.WordPadAfterMs / 1000.0;
+        var linePadBefore = options.LinePadBeforeMs / 1000.0;
+        var linePadAfter = options.LinePadAfterMs / 1000.0;
 
         foreach (var entry in full)
         {
@@ -91,10 +109,9 @@ public static class HitCollector
                 var wordStart = words[start].Word.Start;
                 var wordEnd = words[end].Word.End;
                 var segment = FindSegment(transcript.Segments, wordStart, wordEnd);
+                var (from, to) = segment is not null ? (segment.Start, segment.End) : (wordStart, wordEnd);
 
-                hits.Add(segment is not null
-                    ? new Hit(segment.Start, segment.End, entry, source, WholeCue: true)
-                    : new Hit(wordStart, wordEnd, entry, source, WholeCue: true));
+                hits.Add(new Hit(from - linePadBefore, to + linePadAfter, entry, source, WholeCue: true));
             }
         }
 
@@ -127,6 +144,8 @@ public static class HitCollector
 
         var padBefore = options.EstimatedPadBeforeMs / 1000.0;
         var padAfter = options.EstimatedPadAfterMs / 1000.0;
+        var linePadBefore = options.LinePadBeforeMs / 1000.0;
+        var linePadAfter = options.LinePadAfterMs / 1000.0;
 
         foreach (var cue in cues)
         {
@@ -136,10 +155,11 @@ public static class HitCollector
             var formatted = SubtitleFormatter.FormatCue(cue.Text);
             if (formatted.Length == 0) continue;
 
+            // The whole line, widened: subtitles are often shown a little before or after the line is spoken.
             foreach (var match in SwearMatcher.Find(formatted, full))
             {
-                var start = fit.Map(cue.Start.TotalSeconds);
-                var end = fit.Map(cue.End.TotalSeconds);
+                var start = fit.Map(cue.Start.TotalSeconds) - linePadBefore;
+                var end = fit.Map(cue.End.TotalSeconds) + linePadAfter;
                 hits.Add(new Hit(start, end, match.Entry, HitSource.Subtitle, WholeCue: true));
             }
 
@@ -167,6 +187,8 @@ public static class HitCollector
         var hits = new List<Hit>();
         var padBefore = options.WordPadBeforeMs / 1000.0;
         var padAfter = options.WordPadAfterMs / 1000.0;
+        var linePadBefore = options.LinePadBeforeMs / 1000.0;
+        var linePadAfter = options.LinePadAfterMs / 1000.0;
 
         var full = options.WordsFull.ToHashSet(StringComparer.Ordinal);
         var all = options.WordsFull.Concat(options.WordsSingle).Distinct().ToList();
@@ -179,7 +201,8 @@ public static class HitCollector
             foreach (var match in SwearMatcher.Find(text, all))
             {
                 if (full.Contains(match.Entry))
-                    hits.Add(new Hit(cue.Start.TotalSeconds, cue.End.TotalSeconds, match.Entry, HitSource.LegacyOneWord, WholeCue: true));
+                    hits.Add(new Hit(cue.Start.TotalSeconds - linePadBefore, cue.End.TotalSeconds + linePadAfter, match.Entry,
+                        HitSource.LegacyOneWord, WholeCue: true));
                 else
                     hits.Add(new Hit(cue.Start.TotalSeconds - padBefore, cue.End.TotalSeconds + padAfter, match.Entry,
                         HitSource.LegacyOneWord, WholeCue: false));

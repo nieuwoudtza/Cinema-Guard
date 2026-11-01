@@ -16,6 +16,13 @@ namespace Cinema_Guard;
 
 public sealed partial class MainWindow : Window
 {
+    /// <summary>The smallest window, in effective (96 DPI) pixels.</summary>
+    private const int MinimumWidth = 1040;
+    private const int MinimumHeight = 680;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
     private readonly TaskbarProgress _taskbar;
     private readonly CancellationTokenSource _updateCheck = new();
 
@@ -28,10 +35,23 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
 
-        AppWindow.Resize(new SizeInt32(1240, 860));
+        // Sizes are in physical pixels: scale by the display's DPI, and never past its work area.
+        var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+        if (scale <= 0) scale = 1;
 
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.Move(new PointInt32(area.X + Math.Max(0, (area.Width - 1240) / 2), area.Y + Math.Max(0, (area.Height - 860) / 2)));
+        var width = Math.Min((int)(1240 * scale), area.Width);
+        var height = Math.Min((int)(860 * scale), area.Height);
+
+        AppWindow.Resize(new SizeInt32(width, height));
+        AppWindow.Move(new PointInt32(area.X + Math.Max(0, (area.Width - width) / 2), area.Y + Math.Max(0, (area.Height - height) / 2)));
+
+        // The queue's header and a file's row (two tick boxes, word count, times) need this much room.
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.PreferredMinimumWidth = Math.Min((int)(MinimumWidth * scale), area.Width);
+            presenter.PreferredMinimumHeight = Math.Min((int)(MinimumHeight * scale), area.Height);
+        }
 
         // Taskbar, Alt+Tab and the window menu; an unpackaged app does not get the exe's icon by itself.
         var icon = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
@@ -72,6 +92,7 @@ public sealed partial class MainWindow : Window
         if (ContentFrame.CurrentSourcePageType != start) ContentFrame.Navigate(start);
 
         _ = ViewModel.CheckForUpdatesAsync(_updateCheck.Token);
+        _ = ViewModel.CheckGpuImageAsync(_updateCheck.Token);
     }
 
     /// <summary>Selects a page by its nav tag ("queue", "filter", "models", "tools", "settings").</summary>
@@ -94,6 +115,8 @@ public sealed partial class MainWindow : Window
     }
 
     private void RestartToUpdate_Click(object sender, RoutedEventArgs e) => ViewModel.RestartToUpdate();
+
+    private async void DownloadGpuImage_Click(object sender, RoutedEventArgs e) => await ViewModel.DownloadGpuImageAsync();
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

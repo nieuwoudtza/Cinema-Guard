@@ -271,7 +271,7 @@ public static class Dialogs
             Value = current.MaxUploadMb,
             Minimum = 0,
             Maximum = 4096,
-            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
             PlaceholderText = "0",
         };
         var capNote = new TextBlock

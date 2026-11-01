@@ -48,6 +48,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _cancellation;
 
+    /// <summary>The files a running queue has still to start, in queue order. The runner takes from it on its own thread.</summary>
+    private readonly List<MediaItem> _pending = [];
+
     private readonly SpeechService _speech;
 
     public MainViewModel(
@@ -59,10 +62,14 @@ public sealed partial class MainViewModel : ObservableObject
         SubloaderService subloader,
         EmbeddedSubtitleExtractor extractor,
         UpdateService updates,
-        SpeechService speech)
+        SpeechService speech,
+        PhononService phonon,
+        DockerImagePuller puller)
     {
         _updates = updates;
         _speech = speech;
+        _phonon = phonon;
+        _puller = puller;
         _queueRunner = queueRunner;
         _pipeline = pipeline;
         _settingsService = settingsService;
@@ -74,7 +81,12 @@ public sealed partial class MainViewModel : ObservableObject
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _clockTimer = _dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(1);
-        _clockTimer.Tick += (_, _) => ElapsedText = Format(_clock.Elapsed);
+        _clockTimer.Tick += (_, _) =>
+        {
+            ElapsedText = Format(_clock.Elapsed);
+            foreach (var item in Items.Where(item => item.Item.Status == MediaStatus.Running)) item.RefreshElapsed();
+            UpdateAggregates();
+        };
 
         _pipeline.ItemChanged += OnItemChanged;
         _settingsService.Changed += () => _dispatcher.TryEnqueue(() =>
@@ -83,6 +95,7 @@ public sealed partial class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(SpeechSummary));
         });
         _speech.Models.Changed += () => _dispatcher.TryEnqueue(() => OnPropertyChanged(nameof(SpeechSummary)));
+        _puller.Changed += OnPullerChanged;
     }
 
     /// <summary>The chip next to Start: which model the next run uses, and on what.</summary>
@@ -108,10 +121,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string _statusText = "Drop video files here, or add them with the buttons above.";
     [ObservableProperty] private double _overallProgress;
+
+    /// <summary>"37% overall · file 2 of 5" in the footer while the queue runs; empty otherwise.</summary>
+    [ObservableProperty] private string _overallProgressText = string.Empty;
+
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isEmpty = true;
     [ObservableProperty] private string _queueSummaryText = "No files queued";
-    [ObservableProperty] private string _windowSubtitle = string.Empty;
     [ObservableProperty] private string _elapsedText = string.Empty;
     [ObservableProperty] private bool _isSummaryOpen;
     [ObservableProperty] private string _summaryTitle = string.Empty;
@@ -172,37 +188,62 @@ public sealed partial class MainViewModel : ObservableObject
         if (Items.Any(item => string.Equals(item.Item.InputPath, full, StringComparison.OrdinalIgnoreCase))) return;
 
         var media = new MediaItem(full);
-        media.GenerateSubtitles = ShouldGenerate(media);
+
+        // Files an earlier version left beside the video go into Cinema Guard's cache straight away.
+        media.MoveLegacyFiles();
+        media.GenerateSubtitles = Settings.GenerateSubtitlesForNewFiles;
+        media.ExtractSubtitles = Settings.ExtractSubtitlesForNewFiles;
         media.SubtitleSource = media.SubtitleSourceOnDisk();
+        media.ExpectedSeconds = RunHistory.Default.EstimateFile(full, media.GenerateSubtitles);
 
         Items.Add(new MediaItemViewModel(media));
+
+        // A file added while the queue runs joins the end of it.
+        if (IsRunning)
+        {
+            lock (_pending) _pending.Add(media);
+        }
+
         Log.Info($"Queued {Path.GetFileName(full)}");
     }
 
-    private bool ShouldGenerate(MediaItem item)
-    {
-        if (Settings.AlwaysGenerateSubtitles) return true;
+    /// <summary>For "Selected files without any subtitles": no subtitle file and nothing transcribed before.</summary>
+    private static bool HasNoSubtitles(MediaItem item) =>
+        !File.Exists(item.SidecarPath) &&
+        !File.Exists(item.GeneratedPath) &&
+        !File.Exists(item.OneWordPath) &&
+        !item.HasAnyTranscriptCache;
 
-        return !File.Exists(item.SidecarPath) &&
-               !File.Exists(item.GeneratedPath) &&
-               !File.Exists(item.OneWordPath) &&
-               !item.HasAnyTranscriptCache;
-    }
-
+    /// <summary>Takes files off the queue. While it runs, a waiting file never starts and the running one is cancelled.</summary>
     public void Remove(IEnumerable<MediaItemViewModel> items)
     {
-        if (IsRunning) return;
+        foreach (var item in items.ToList())
+        {
+            if (IsRunning)
+            {
+                lock (_pending) _pending.Remove(item.Item);
+                _queueRunner.Remove(item.Item);
+            }
 
-        foreach (var item in items.ToList()) Items.Remove(item);
+            Items.Remove(item);
+        }
+
         UpdateAggregates();
     }
 
-    public void Clear()
-    {
-        if (IsRunning) return;
+    public void Clear() => Remove(Items);
 
-        Items.Clear();
-        UpdateAggregates();
+    /// <summary>The next file for the running queue, or null when none is left.</summary>
+    private MediaItem? TakeNext()
+    {
+        lock (_pending)
+        {
+            if (_pending.Count == 0) return null;
+
+            var next = _pending[0];
+            _pending.RemoveAt(0);
+            return next;
+        }
     }
 
     public void SetGenerateMode(GenerateMode mode, IEnumerable<MediaItemViewModel>? targets = null)
@@ -215,7 +256,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 GenerateMode.All => true,
                 GenerateMode.None => false,
-                _ => ShouldGenerate(item.Item),
+                _ => HasNoSubtitles(item.Item),
             };
         }
     }
@@ -279,10 +320,15 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            var media = Items.Select(item => item.Item).ToList();
+            lock (_pending)
+            {
+                _pending.Clear();
+                _pending.AddRange(Items.Select(item => item.Item));
+            }
+
             var token = _cancellation.Token;
 
-            var summary = await Task.Run(() => _queueRunner.RunAsync(media, Settings, token), token);
+            var summary = await Task.Run(() => _queueRunner.RunAsync(TakeNext, Settings, token), token);
 
             StatusText = summary.Describe();
             ShowSummary(
@@ -304,6 +350,7 @@ public sealed partial class MainViewModel : ObservableObject
         finally
         {
             IsRunning = false;
+            lock (_pending) _pending.Clear();
             _clock.Stop();
             _clockTimer.Stop();
             _cancellation?.Dispose();
@@ -365,14 +412,14 @@ public sealed partial class MainViewModel : ObservableObject
 
                 item.CustomSubtitlePath = path;
                 item.SubtitleSource = "Embedded";
-                item.StatusText = "Subtitles extracted";
+                item.StatusText = "Subtitles saved";
                 item.Message = Path.GetFileName(path);
                 target.GenerateSubtitles = false;
                 extracted++;
             }
             catch (Exception ex)
             {
-                item.StatusText = "Extraction failed";
+                item.StatusText = "Could not save the subtitles";
                 item.Message = ex.Message;
                 Log.Warn($"{item.Stem}: {ex.Message}");
             }
@@ -380,7 +427,7 @@ public sealed partial class MainViewModel : ObservableObject
             target.Sync();
         }
 
-        ShowSummary("Extract subtitles", $"{extracted}/{attempted} extracted successfully.", extracted == attempted ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        ShowSummary("Save subtitles as .srt", $"{extracted}/{attempted} saved beside the video.", extracted == attempted ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
 
     public async Task DownloadSubtitlesAsync(IEnumerable<MediaItemViewModel> targets)
@@ -453,10 +500,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (item.Hits is not null) return Build(item.Hits);
 
-            var options = new HitCollectorOptions(
-                Settings.WordsFull, Settings.WordsSingle,
-                Settings.EstimatedPadBeforeMs, Settings.EstimatedPadAfterMs,
-                Settings.WordPadBeforeMs, Settings.WordPadAfterMs);
+            var options = HitCollectorOptions.From(Settings);
 
             List<Cue>? cues = null;
 
@@ -550,31 +594,36 @@ public sealed partial class MainViewModel : ObservableObject
         if (Items.Count == 0)
         {
             OverallProgress = 0;
+            OverallProgressText = string.Empty;
             QueueSummaryText = "No files queued";
-            WindowSubtitle = string.Empty;
             return;
         }
 
         var finished = Items.Count(item => item.Item.IsFinished);
-        var progress = Items.Average(item => item.Item.Status switch
+        // Each file weighs what it is expected to take, so a long film moves the total more than a short episode.
+        var weights = Items.Sum(item => Math.Max(1, item.Item.ExpectedSeconds));
+        var progress = Items.Sum(item => Math.Max(1, item.Item.ExpectedSeconds) * (item.Item.Status switch
         {
             MediaStatus.Succeeded or MediaStatus.Skipped or MediaStatus.Failed or MediaStatus.Cancelled => 100,
             _ => item.Item.Progress,
-        });
+        })) / weights;
 
         OverallProgress = progress;
         QueueSummaryText = $"{Items.Count} file{(Items.Count == 1 ? string.Empty : "s")} · {finished} finished";
-        WindowSubtitle = QueueSummaryText;
+        OverallProgressText = string.Empty;
 
         if (!IsRunning) return;
+
+        OverallProgressText = $"{Math.Floor(progress):0}% overall";
 
         var current = Items.FirstOrDefault(item => item.Item.Status == MediaStatus.Running);
 
         if (current is not null)
-        {
-            var index = Items.IndexOf(current) + 1;
-            WindowSubtitle = $"Cinema Guard [{index}/{Items.Count}]";
-        }
+            OverallProgressText += $" · file {Items.IndexOf(current) + 1} of {Items.Count}";
+
+        // The running file's time left plus every waiting file's expected time.
+        var remaining = Items.Sum(item => item.Item.EstimatedRemaining?.TotalSeconds ?? 0);
+        if (remaining > 0) OverallProgressText += " · " + FormatRemaining(TimeSpan.FromSeconds(remaining));
     }
 
     private void ShowSummary(string title, string message, InfoBarSeverity severity)
@@ -586,8 +635,19 @@ public sealed partial class MainViewModel : ObservableObject
         Log.Info($"{title}: {message}");
     }
 
-    private static string Format(TimeSpan time) =>
+    private static string Format(TimeSpan time) => FormatElapsed(time);
+
+    internal static string FormatElapsed(TimeSpan time) =>
         $"{(int)time.TotalHours:00}:{time.Minutes:00}:{time.Seconds:00}";
+
+    /// <summary>"less than a minute left", "about 12 min left", "about 1 h 20 min left": an estimate, so rounded.</summary>
+    internal static string FormatRemaining(TimeSpan time)
+    {
+        if (time.TotalSeconds < 60) return "less than a minute left";
+
+        var minutes = (int)Math.Ceiling(time.TotalMinutes);
+        return minutes < 60 ? $"about {minutes} min left" : $"about {minutes / 60} h {minutes % 60} min left";
+    }
 }
 
 public sealed record ForeignSpanDto(string Range, string Language, string Segments, string Text, string EnglishText);

@@ -23,10 +23,26 @@ public sealed partial class ToolsPage : Page
     public ToolsPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await ViewModel.RefreshAsync();
+
+        Loaded += async (_, _) =>
+        {
+            ViewModel.Attach();
+            await ViewModel.RefreshAsync();
+        };
+
+        Unloaded += (_, _) => ViewModel.Detach();
     }
 
     private async void Recheck_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync();
+
+    /// <summary>The Docker row's button: get Docker Desktop, start it, download the GPU image, or cancel that download.</summary>
+    private async void ToolAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: ToolRow { Key: "docker" } }) return;
+
+        if (await ViewModel.RunDockerActionAsync() is { } result)
+            Show(result.Ok ? InfoBarSeverity.Success : InfoBarSeverity.Warning, "GPU image", result.Message);
+    }
 
     private async void Setup_Click(object sender, RoutedEventArgs e)
     {

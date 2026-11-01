@@ -232,7 +232,48 @@ public class SpeechTests
 
         Assert.Equal(item.EnglishCachePath, item.CachePathFor(SpeechCatalog.PhononEnglishId));
         Assert.Equal(item.MultilingualCachePath, item.CachePathFor(SpeechCatalog.PhononMultilingualId));
-        Assert.Equal(@"C:\films\Film.transcript.json", item.CachePathFor("whisper-small/q8_0"));
+        Assert.Equal(Path.Combine(item.CacheFolder, "transcript.json"), item.CachePathFor("whisper-small/q8_0"));
+    }
+
+    [Fact]
+    public void TranscriptsLiveInTheCacheNotBesideTheVideo()
+    {
+        var item = new MediaItem(@"C:\films\Film.mkv");
+
+        Assert.StartsWith(MediaItem.CacheRoot, item.CacheFolder);
+        Assert.StartsWith("Film-", Path.GetFileName(item.CacheFolder));
+        Assert.All(
+            new[] { item.GeneratedPath, item.EnglishCachePath, item.MultilingualCachePath, item.TranscriptCachePath, item.LanguageReportPath },
+            path => Assert.Equal(item.CacheFolder, Path.GetDirectoryName(path)));
+
+        // Another film of the same name elsewhere gets its own folder.
+        Assert.NotEqual(item.CacheFolder, new MediaItem(@"D:\other\Film.mkv").CacheFolder);
+    }
+
+    [Fact]
+    public void LegacyFilesBesideTheVideoMoveIntoTheCache()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "cg-legacy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var item = new MediaItem(Path.Combine(folder, "film.mkv"));
+
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "film.phonon-en.json"), "{}");
+            File.WriteAllText(Path.Combine(folder, "film.generated.srt"), "1");
+
+            item.MoveLegacyFiles();
+
+            Assert.False(File.Exists(Path.Combine(folder, "film.phonon-en.json")));
+            Assert.False(File.Exists(Path.Combine(folder, "film.generated.srt")));
+            Assert.True(File.Exists(item.EnglishCachePath));
+            Assert.True(File.Exists(item.GeneratedPath));
+        }
+        finally
+        {
+            item.DeleteCache();
+            Directory.Delete(folder, recursive: true);
+        }
     }
 
     [Fact]
@@ -329,6 +370,7 @@ public class SpeechTests
         }
         finally
         {
+            new MediaItem(Path.Combine(folder, "film.mkv")).DeleteCache();
             Directory.Delete(folder, recursive: true);
         }
     }

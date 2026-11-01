@@ -1,0 +1,70 @@
+<Project>
+  <!--
+    Every build of the app gets the next dated version, the same form publish.ps1 releases:
+    yyyy.MM.dd.<n>, where n counts the builds of the day (2026.11.01.1, 2026.11.01.2, ...; 1 again the
+    next day). The count lives in build-number.json beside this file; publish.ps1 reads and writes the
+    same file, so a release continues the count and passes CgReleaseBuild=true to stop a second bump.
+
+    Velopack only takes 3-part versions, so Version (the package form) is year.MMdd.n; the app shows
+    InformationalVersion, the dated form. Only the app project is numbered: CoreInfo reads the version
+    from the running exe, so the core library and the tests keep the default from Directory.Build.props.
+    Design-time builds (Visual Studio's background builds) never count.
+  -->
+  <UsingTask
+    TaskName="CgNextBuildVersion"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <CounterFile ParameterType="System.String" Required="true" />
+      <DisplayVersion ParameterType="System.String" Output="true" />
+      <PackageVersion ParameterType="System.String" Output="true" />
+      <FileVersionNumber ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Globalization" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var today = DateTime.Today;
+        var todayText = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var iteration = 1;
+
+        if (File.Exists(CounterFile))
+        {
+            var text = File.ReadAllText(CounterFile);
+            var date = Regex.Match(text, "\"date\"\\s*:\\s*\"([0-9-]+)\"");
+            var count = Regex.Match(text, "\"iteration\"\\s*:\\s*([0-9]+)");
+
+            if (date.Success && count.Success && date.Groups[1].Value == todayText)
+                iteration = int.Parse(count.Groups[1].Value, CultureInfo.InvariantCulture) + 1;
+        }
+
+        File.WriteAllText(CounterFile, "{\n  \"date\": \"" + todayText + "\",\n  \"iteration\": " + iteration + "\n}\n");
+
+        DisplayVersion = today.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture) + "." + iteration;
+        PackageVersion = today.Year + "." + (today.Month * 100 + today.Day) + "." + iteration;
+        FileVersionNumber = today.Year + "." + today.Month + "." + today.Day + "." + iteration;
+
+        Log.LogMessage(MessageImportance.High, "Cinema Guard " + DisplayVersion + " (package " + PackageVersion + ")");
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target
+    Name="CgStampBuildVersion"
+    BeforeTargets="BeforeBuild;GetAssemblyVersion"
+    Condition="'$(MSBuildProjectName)' == 'Cinema Guard' and '$(CgReleaseBuild)' != 'true' and '$(DesignTimeBuild)' != 'true'">
+    <CgNextBuildVersion CounterFile="$(MSBuildThisFileDirectory)build-number.json">
+      <Output TaskParameter="DisplayVersion" PropertyName="CgDisplayVersion" />
+      <Output TaskParameter="PackageVersion" PropertyName="CgPackageVersion" />
+      <Output TaskParameter="FileVersionNumber" PropertyName="CgFileVersion" />
+    </CgNextBuildVersion>
+
+    <PropertyGroup>
+      <Version>$(CgPackageVersion)</Version>
+      <InformationalVersion>$(CgDisplayVersion)</InformationalVersion>
+      <FileVersion>$(CgFileVersion)</FileVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

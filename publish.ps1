@@ -12,9 +12,12 @@
 
     Then upload the whole release folder to the IIS folder behind the feed URL.
 
-    Versions are dated: yyyy.MM.dd.<iteration>. The first release today is 2026.11.01.1, the next one
-    the same day 2026.11.01.2. The iteration is found from the releases already on the feed and in the
-    local release folder, so normally no version is passed at all.
+    Versions are dated: yyyy.MM.dd.<iteration>, the same numbers every build of the app gets. Each
+    build bumps the iteration in build-number.json (Directory.Build.targets): 2026.11.01.1, then
+    2026.11.01.2, ..., starting at 1 again the next day. A release takes the next number from that file
+    and writes it back, so the builds after it carry on from it. When the feed or the local release
+    folder already holds that number or a higher one today, the release moves past them. Normally no
+    version is passed at all.
 
     Velopack only accepts 3-part SemVer versions, so the package itself is numbered year.MMdd.iteration
     (2026.11.01.1 -> 2026.1101.1; 5 January -> 2026.105.1). It sorts by day, then by iteration. The app,
@@ -78,6 +81,27 @@ function PackageVersionOf([datetime]$date, [int]$iteration) {
     "{0}.{1}.{2}" -f $date.Year, ($date.Month * 100 + $date.Day), $iteration
 }
 
+# The build counter Directory.Build.targets bumps on every build of the app: { "date": "yyyy-MM-dd", "iteration": n }.
+$counterFile = Join-Path $root "build-number.json"
+
+function Read-BuildCounter {
+    if (-not (Test-Path $counterFile)) { return $null }
+
+    try {
+        $counter = Get-Content $counterFile -Raw | ConvertFrom-Json
+        return [pscustomobject]@{ Date = [string]$counter.date; Iteration = [int]$counter.iteration }
+    }
+    catch {
+        Write-Warning "Could not read $counterFile ($($_.Exception.Message)); counting from 1."
+        return $null
+    }
+}
+
+function Write-BuildCounter([datetime]$date, [int]$iteration) {
+    $json = "{`n  `"date`": `"$($date.ToString('yyyy-MM-dd'))`",`n  `"iteration`": $iteration`n}`n"
+    [IO.File]::WriteAllText($counterFile, $json)
+}
+
 # Every package version already released: the live feed, the local release folder, and the
 # -PreviousReleasePath folder. The feed being unreachable is only a warning (the site may not be up yet).
 function Get-ReleasedVersions {
@@ -125,11 +149,19 @@ if ($Version) {
 }
 else {
     $date = (Get-Date).Date
-    $prefix = "{0}.{1}." -f $date.Year, ($date.Month * 100 + $date.Day)
 
+    # The next build number, as the next build of the app would get it.
+    $counter = Read-BuildCounter
+    $iteration = if ($counter -and $counter.Date -eq $date.ToString("yyyy-MM-dd")) { $counter.Iteration + 1 } else { 1 }
+
+    # Past anything already released today (from another machine, or a counter that was reset).
+    $prefix = "{0}.{1}." -f $date.Year, ($date.Month * 100 + $date.Day)
     $pattern = "^" + [regex]::Escape($prefix) + "(\d+)$"
     $today = @($released | Where-Object { $_ -match $pattern } | ForEach-Object { [int]($_ -replace $pattern, '$1') })
-    $iteration = if ($today.Count -gt 0) { ($today | Measure-Object -Maximum).Maximum + 1 } else { 1 }
+    if ($today.Count -gt 0) {
+        $highest = ($today | Measure-Object -Maximum).Maximum
+        if ($iteration -le $highest) { $iteration = $highest + 1 }
+    }
 }
 
 $PackageVersion = PackageVersionOf $date $iteration
@@ -149,7 +181,15 @@ if ($newest -and [version]$PackageVersion -le $newest) {
 
 Write-Host "Version $DisplayVersion (package $PackageVersion)" -ForegroundColor Green
 
-$versionArgs = @("-p:Version=$PackageVersion", "-p:InformationalVersion=$DisplayVersion", "-p:FileVersion=$FileVersion")
+# The builds after this release carry on from its number (never back below what the counter had).
+if ($date -eq (Get-Date).Date) {
+    $counter = Read-BuildCounter
+    $counted = if ($counter -and $counter.Date -eq $date.ToString("yyyy-MM-dd")) { $counter.Iteration } else { 0 }
+    Write-BuildCounter $date ([Math]::Max($iteration, $counted))
+}
+
+# CgReleaseBuild: this version is final, so Directory.Build.targets does not bump the counter again.
+$versionArgs = @("-p:Version=$PackageVersion", "-p:InformationalVersion=$DisplayVersion", "-p:FileVersion=$FileVersion", "-p:CgReleaseBuild=true")
 
 $running = Get-Process -Name "Cinema Guard" -ErrorAction SilentlyContinue
 if ($running) {

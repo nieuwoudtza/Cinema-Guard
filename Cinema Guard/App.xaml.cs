@@ -58,6 +58,7 @@ public partial class App : Application
         }
 
         WorkFolder.CleanupOld(TimeSpan.FromDays(2));
+        _ = Task.Run(() => MediaItem.CleanupCache(TimeSpan.FromDays(30)));
 
         // Archives from an install that was closed or crashed: a fresh one would be downloaded again.
         _ = Task.Run(() => Services.GetRequiredService<ModelManager>().SweepDownloads(TimeSpan.FromDays(1)));
@@ -124,7 +125,11 @@ public partial class App : Application
                     }
                 }
 
-                foreach (var item in items) item.GenerateSubtitles = ShouldGenerate(item, settings);
+                foreach (var item in items)
+                {
+                    item.GenerateSubtitles = ShouldGenerate(item, settings);
+                    item.ExtractSubtitles = settings.ExtractSubtitlesForNewFiles;
+                }
 
                 if (items.Count > 0)
                 {
@@ -152,10 +157,15 @@ public partial class App : Application
         });
     }
 
+    /// <summary>
+    /// A headless run has no one to tick Generate, so besides the setting it also transcribes a file
+    /// that has no subtitles at all (else it could only fail, as the old app's -start never did).
+    /// </summary>
     private static bool ShouldGenerate(MediaItem item, AppSettings settings)
     {
-        if (settings.AlwaysGenerateSubtitles) return true;
+        if (settings.GenerateSubtitlesForNewFiles) return true;
 
+        item.MoveLegacyFiles();
         return !File.Exists(item.SidecarPath) &&
                !File.Exists(item.GeneratedPath) &&
                !File.Exists(item.OneWordPath) &&

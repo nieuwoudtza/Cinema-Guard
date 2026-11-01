@@ -20,7 +20,6 @@
                 <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,0" VerticalAlignment="Center">
                     <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
                 </Border>
-                <TextBlock Text="{x:Bind ViewModel.WindowSubtitle, Mode=OneWay}" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
 
@@ -59,7 +58,7 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Grid RowDefinitions="Auto,*">
+            <Grid RowDefinitions="Auto,Auto,*">
                 <InfoBar
                     Margin="24,8,24,0"
                     Title="Update ready"
@@ -74,7 +73,23 @@
                             IsEnabled="{x:Bind ViewModel.CanRestartToUpdate, Mode=OneWay}" />
                     </InfoBar.ActionButton>
                 </InfoBar>
-                <Frame x:Name="ContentFrame" Grid.Row="1" />
+                <!-- Phonon is set to the GPU but its image is missing (first install, or an update moved it on). -->
+                <InfoBar
+                    Grid.Row="1"
+                    Margin="24,8,24,0"
+                    IsClosable="True"
+                    IsOpen="{x:Bind ViewModel.IsGpuNoticeOpen, Mode=TwoWay}"
+                    Title="{x:Bind ViewModel.GpuNoticeTitle, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.GpuNoticeMessage, Mode=OneWay}"
+                    Severity="{x:Bind ViewModel.GpuNoticeSeverity, Mode=OneWay}">
+                    <InfoBar.ActionButton>
+                        <Button
+                            Content="Download"
+                            Click="DownloadGpuImage_Click"
+                            Visibility="{x:Bind ViewModel.CanDownloadGpuImage, Mode=OneWay}" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+                <Frame x:Name="ContentFrame" Grid.Row="2" />
             </Grid>
         </NavigationView>
     </Grid>

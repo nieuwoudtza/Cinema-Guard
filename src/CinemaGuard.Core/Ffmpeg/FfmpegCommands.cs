@@ -43,7 +43,7 @@ public static class FfmpegCommands
     {
         var arguments = new List<string>
         {
-            "-hide_banner", "-nostdin", "-y", "-i", inputPath,
+            "-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats", "-i", inputPath,
             "-map", $"0:a:{audioOrdinal}", "-vn", "-sn", "-dn",
         };
 
@@ -64,7 +64,7 @@ public static class FfmpegCommands
 
     public static IReadOnlyList<string> ExtractChannel16k(string inputPath, int audioOrdinal, string channel, double gain, string targetPath) =>
     [
-        "-hide_banner", "-nostdin", "-y", "-i", inputPath,
+        "-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats", "-i", inputPath,
         "-map", $"0:a:{audioOrdinal}", "-vn", "-sn", "-dn",
         "-af", $"pan=mono|c0={channel},volume={gain.ToString("0.0", CultureInfo.InvariantCulture)}",
         "-ar", "16000", "-c:a", "pcm_s16le", targetPath,

@@ -21,6 +21,7 @@ public static class AppServices
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<ToolLocator>();
         services.AddSingleton<PhononService>();
+        services.AddSingleton<DockerImagePuller>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ModelManager>();
         services.AddSingleton<SpeechService>();

@@ -73,7 +73,8 @@ public sealed record ToolSnapshot(
     bool DockerImagePresent,
     bool PhononAvailable,
     PhononRuntimeMode EffectiveRuntime,
-    DateTimeOffset CheckedAt);
+    DateTimeOffset CheckedAt,
+    bool DockerEngineRunning = false);
 
 /// <summary>Finds ffmpeg, ffprobe, docker, fermion and subloader-cli, and reports what is usable.</summary>
 public sealed partial class ToolLocator(IProcessRunner runner)
@@ -170,37 +171,57 @@ public sealed partial class ToolLocator(IProcessRunner runner)
         return null;
     }
 
-    public async Task<ToolSnapshot> CheckAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    /// <summary>The tools <see cref="CheckAsync"/> reports, by key and in order, for a list shown before the checks finish.</summary>
+    public static IReadOnlyList<(string Key, string DisplayName)> CheckedTools { get; } =
+    [
+        ("ffmpeg", "FFmpeg"),
+        ("ffprobe", "FFprobe"),
+        ("docker", "Docker (GPU)"),
+        ("fermion", "Phonon engine"),
+        ("subloader", "Subloader"),
+    ];
+
+    /// <param name="onTool">Told about each tool the moment its own check finishes; the checks run side by side.</param>
+    public async Task<ToolSnapshot> CheckAsync(AppSettings settings, IProgress<ToolStatus>? onTool = null, CancellationToken cancellationToken = default)
     {
-        var tools = new List<ToolStatus>();
-
-        var ffmpeg = ResolveFfmpeg(settings);
-        var ffmpegStatus = await CheckVersionAsync("ffmpeg", "FFmpeg", ffmpeg, ["-version"], required: true, cancellationToken);
-        tools.Add(ffmpegStatus with { Problem = CheckFfmpegVersion(ffmpegStatus) });
-
-        var ffprobe = ResolveFfprobe(settings);
-        tools.Add(await CheckVersionAsync("ffprobe", "FFprobe", ffprobe, ["-version"], required: true, cancellationToken));
-
-        var docker = ResolveDocker(settings);
-        var dockerStatus = await CheckDockerAsync(docker, settings, cancellationToken);
-        tools.Add(dockerStatus.Status);
-
-        var fermion = ResolveFermion(settings);
-        if (fermion is not null)
+        async Task<T> Check<T>(Func<Task<T>> check, Func<T, ToolStatus> status)
         {
-            tools.Add(await CheckVersionAsync("fermion", "Phonon engine (your fermion.exe)", fermion, ["--version"], required: false, cancellationToken));
+            var result = await Task.Run(check, cancellationToken);
+            onTool?.Report(status(result));
+            return result;
         }
-        else
+
+        var ffmpegTask = Check(async () =>
         {
+            var status = await CheckVersionAsync("ffmpeg", "FFmpeg", ResolveFfmpeg(settings), ["-version"], required: true, cancellationToken);
+            return status with { Problem = CheckFfmpegVersion(status) };
+        }, status => status);
+
+        var ffprobeTask = Check(
+            () => CheckVersionAsync("ffprobe", "FFprobe", ResolveFfprobe(settings), ["-version"], required: true, cancellationToken),
+            status => status);
+
+        var dockerTask = Check(() => CheckDockerAsync(ResolveDocker(settings), settings, cancellationToken), result => result.Status);
+
+        var fermionTask = Check(() =>
+        {
+            var fermion = ResolveFermion(settings);
+            if (fermion is not null)
+                return CheckVersionAsync("fermion", "Phonon engine (your fermion.exe)", fermion, ["--version"], required: false, cancellationToken);
+
             var installed = File.Exists(Speech.EnginePacks.PhononRuntime.MarkerPath) && File.Exists(Speech.SpeechPaths.PhononPython);
-            tools.Add(new ToolStatus("fermion", "Phonon engine", installed, false,
+            return Task.FromResult(new ToolStatus("fermion", "Phonon engine", installed, false,
                 installed ? Speech.SpeechPaths.PhononRuntime : null,
                 installed ? $"fermion {Speech.EnginePacks.FermionVersion}" : null,
                 installed ? null : "Not downloaded (Models page)"));
-        }
+        }, status => status);
 
-        var subloader = ResolveSubloader(settings);
-        tools.Add(await CheckVersionAsync("subloader", "Subloader", subloader, ["--version"], required: false, cancellationToken));
+        var subloaderTask = Check(
+            () => CheckVersionAsync("subloader", "Subloader", ResolveSubloader(settings), ["--version"], required: false, cancellationToken),
+            status => status);
+
+        var dockerStatus = await dockerTask;
+        List<ToolStatus> tools = [await ffmpegTask, await ffprobeTask, dockerStatus.Status, await fermionTask, await subloaderTask];
 
         var dockerReady = dockerStatus.Status.Ready && dockerStatus.EngineReady;
         var imageReady = dockerStatus.ImagePresent;
@@ -220,14 +241,15 @@ public sealed partial class ToolLocator(IProcessRunner runner)
             imageReady,
             (dockerReady && imageReady) || fermionReady,
             effective,
-            DateTimeOffset.Now);
+            DateTimeOffset.Now,
+            dockerStatus.EngineReady);
     }
 
     private async Task<(ToolStatus Status, bool EngineReady, bool ImagePresent)> CheckDockerAsync(
         string? docker, AppSettings settings, CancellationToken cancellationToken)
     {
         if (docker is null)
-            return (new ToolStatus("docker", "Docker", false, false, null, null, "Not found"), false, false);
+            return (new ToolStatus("docker", "Docker (GPU)", false, false, null, null, "Not found"), false, false);
 
         var version = await runner.RunAsync(new ProcessSpec(docker, ["version", "--format", "{{.Server.Version}}"]),
             cancellationToken: cancellationToken);

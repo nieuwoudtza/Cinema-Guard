@@ -16,7 +16,7 @@ public sealed class PipelineException(string message) : Exception(message);
 
 /// <summary>
 /// One file, end to end. Every step is cancellable, every failure is reported on the item, and the
-/// user's input and subtitle files are never touched (except the explicit recycle option, after validation).
+/// user's input and subtitle files are never touched (except the explicit remove-originals option, after validation).
 /// </summary>
 public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, SpeechService speech)
 {
@@ -31,6 +31,12 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         item.Message = null;
         item.OutputPath = null;
         item.FallbackNote = null;
+        item.StartedAt = DateTimeOffset.Now;
+        item.FinishedAt = null;
+
+        // Transcripts an earlier version left beside the video move into the cache; a run keeps its cache fresh.
+        item.MoveLegacyFiles();
+        item.TouchCache();
 
         try
         {
@@ -54,12 +60,17 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         }
         finally
         {
+            // Finished, failed or stopped: without "Keep transcripts" nothing of this file is left behind.
+            if (!settings.KeepTranscripts) item.DeleteCache();
+
+            item.FinishedAt = DateTimeOffset.Now;
             Raise(item);
         }
     }
 
     private async Task ExecuteAsync(MediaItem item, AppSettings settings, CancellationToken cancellationToken)
     {
+        var wholeFile = Stopwatch.StartNew();
         SetStatus(item, "Checking the file");
 
         if (!File.Exists(item.InputPath))
@@ -105,6 +116,40 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         CheckSpace(item, probe, settings);
 
+        // The steps that report progress, weighed by the time they are expected to take on this file (its
+        // drive, size, resolution, audio; see RunHistory). The transcription steps are planned once it is
+        // known which passes are cached; the vocals channels are dropped if unused.
+        var features = StepFeatures.ForMedia(item.InputPath, probe, audio);
+        var fileProgress = new FileProgress();
+        var vocalsChannels = settings.MuteVocalsOnly ? VocalsChannels(audio) : [];
+
+        fileProgress.Plan(EncodeStep, ExpectedEncodeSeconds(features, reencodesAudio: true));
+        fileProgress.Plan(CheckStep, StepEstimates.CheckOutput);
+
+        if (vocalsChannels.Count > 0)
+        {
+            var transcribeSeconds = ExpectedTranscribeSeconds(SpeechService.Plan(settings).Primary, settings, features);
+
+            foreach (var channel in vocalsChannels)
+            {
+                fileProgress.Plan(ChannelAudioStep(channel), ExpectedExtractSeconds(features));
+                fileProgress.Plan(ChannelStep(channel), transcribeSeconds);
+            }
+        }
+
+        ShowExpected(item, fileProgress);
+
+        void DropVocalsChannels()
+        {
+            foreach (var channel in vocalsChannels)
+            {
+                fileProgress.Drop(ChannelAudioStep(channel));
+                fileProgress.Drop(ChannelStep(channel));
+            }
+
+            ShowProgress(item, fileProgress);
+        }
+
         using var work = WorkFolder.Create(settings.KeepWorkFiles);
 
         SetStatus(item, "Looking for subtitles");
@@ -116,7 +161,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         if (item.GenerateSubtitles)
         {
-            (english, multilingual) = await TranscribeAsync(item, settings, probe, audio, ffmpeg, work, cancellationToken);
+            (english, multilingual) = await TranscribeAsync(item, settings, probe, audio, ffmpeg, work, fileProgress, features, cancellationToken);
         }
         else
         {
@@ -139,7 +184,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         }
 
         if (english is null && multilingual is null && subtitleCues is null && legacyOneWord is null)
-            throw new PipelineException("There are no subtitles and no transcript to work from. Tick Generate for this file or add a subtitle file.");
+            throw new PipelineException(item.ExtractSubtitles || !HasTextSubtitleTrack(probe)
+                ? "There are no subtitles and no transcript to work from. Tick Generate subtitles for this file, or add a subtitle file."
+                : "There are no subtitles and no transcript to work from. Tick Extract subtitles (the video has a subtitle track) or Generate subtitles, or add a subtitle file.");
 
         // The written/embedded subtitles: the original subtitles, else the generated cues, else the one-word cues.
         var outputCues = subtitleCues;
@@ -154,13 +201,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         SetStatus(item, "Finding filtered words");
 
-        var options = new HitCollectorOptions(
-            settings.WordsFull,
-            settings.WordsSingle,
-            settings.EstimatedPadBeforeMs,
-            settings.EstimatedPadAfterMs,
-            settings.WordPadBeforeMs,
-            settings.WordPadAfterMs);
+        var options = HitCollectorOptions.From(settings);
 
         var hits = HitCollector.Collect(
             options,
@@ -203,10 +244,12 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                          english is not null &&
                          ChannelLayouts.CanSplitVocals(audio.Stream.ChannelLayout);
 
+                if (!vocals) DropVocalsChannels();
+
                 if (vocals)
                 {
                     var perChannel = await BuildVocalsRangesAsync(
-                        item, settings, probe, audio, hits, subtitleCues, english!, ffmpeg, work, cancellationToken);
+                        item, settings, probe, audio, hits, subtitleCues, english!, ffmpeg, work, fileProgress, features, cancellationToken);
 
                     if (perChannel.Count == 0)
                     {
@@ -230,9 +273,14 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                     MuteFilterWriter.Write(filterScript, audio.Ordinal, ranges);
                 }
             }
-            else if (settings.MuteVocalsOnly)
+            else
             {
-                Log.Info($"{item.Stem}: no filtered words, vocals-only mode not needed.");
+                if (settings.MuteVocalsOnly) Log.Info($"{item.Stem}: no filtered words, vocals-only mode not needed.");
+
+                // Nothing to mute: the audio is copied, not re-encoded.
+                DropVocalsChannels();
+                fileProgress.Plan(EncodeStep, ExpectedEncodeSeconds(features, reencodesAudio: false));
+                ShowExpected(item, fileProgress);
             }
 
             var request = new EncodeRequest
@@ -264,18 +312,11 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 var encodeArguments = FfmpegCommands.Encode(request);
                 Log.Info($"{item.Stem}: ffmpeg {CommandLine.Join(encodeArguments)}");
 
-                var progress = new FfmpegProgress(probe.DurationSeconds);
-                var encode = await runner.RunAsync(
-                    new ProcessSpec(ffmpeg, encodeArguments),
-                    onStandardOutput: line =>
-                    {
-                        progress.Feed(line);
-                        if (progress.Percent <= 0) return;
-                        item.Progress = progress.Percent;
-                        item.StatusText = progress.Speed is null ? "Encoding" : $"Encoding ({progress.Speed})";
-                        Raise(item);
-                    },
-                    cancellationToken: cancellationToken);
+                var encode = await RunFfmpegStepAsync(
+                    item, fileProgress, EncodeStep, ffmpeg, encodeArguments,
+                    StepKind.Encode, features with { Reencode = ranges.Count > 0 },
+                    encodeProgress => item.StatusText = encodeProgress.Speed is null ? "Encoding" : $"Encoding ({encodeProgress.Speed})",
+                    cancellationToken);
 
                 if (encode.Cancelled) throw new OperationCanceledException(cancellationToken);
                 if (!encode.Success) throw new PipelineException($"FFmpeg failed: {Tail(encode.StdErr)}");
@@ -291,6 +332,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
                 if (validation.Cancelled) throw new OperationCanceledException(cancellationToken);
                 if (!validation.Ok) throw new PipelineException($"The output is not usable: {validation.Error}");
+
+                fileProgress.Complete(CheckStep);
+                ShowProgress(item, fileProgress);
 
                 TryDelete(outputPath);
                 File.Move(partialPath, outputPath, overwrite: true);
@@ -321,11 +365,15 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         item.Message = summary;
 
-        if (settings.DeleteOriginalFiles) DeleteOriginals(item);
+        var transcribed = fileProgress.Has(PrimaryPassStep) || fileProgress.Has(SecondPassStep);
+        RunHistory.Default.Record(StepKind.File, features with { Transcribed = transcribed }, wholeFile.Elapsed);
+
+        if (settings.DeleteOriginalFiles) DeleteOriginals(item, settings.DeleteOriginalsPermanently);
     }
 
     private async Task<(PhononResult? English, PhononResult? Multilingual)> TranscribeAsync(
-        MediaItem item, AppSettings settings, MediaProbe probe, AudioSelection audio, string ffmpeg, WorkFolder work, CancellationToken cancellationToken)
+        MediaItem item, AppSettings settings, MediaProbe probe, AudioSelection audio, string ffmpeg, WorkFolder work,
+        FileProgress fileProgress, StepFeatures features, CancellationToken cancellationToken)
     {
         var layout = audio.Stream.ChannelLayout ?? string.Empty;
         var plan = SpeechService.Plan(settings);
@@ -349,6 +397,13 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         var wav = work.File("audio16k.wav");
         var needsAudio = english is null || (secondPass is not null && multilingual is null);
 
+        if (needsAudio) fileProgress.Plan(AudioStep, ExpectedExtractSeconds(features));
+        if (english is null) fileProgress.Plan(PrimaryPassStep, ExpectedTranscribeSeconds(primaryPass, settings, features));
+        if (secondPass is not null && multilingual is null)
+            fileProgress.Plan(SecondPassStep, ExpectedTranscribeSeconds(secondPass, settings, features));
+
+        ShowExpected(item, fileProgress);
+
         if (needsAudio)
         {
             // Say what is missing before spending minutes on the audio.
@@ -358,9 +413,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             }
 
             SetStatus(item, "Extracting audio for transcription");
-            var extract = await runner.RunAsync(
-                new ProcessSpec(ffmpeg, FfmpegCommands.ExtractAudio16k(item.InputPath, audio.Ordinal, settings.DialogueDownmix, layout, wav)),
-                cancellationToken: cancellationToken);
+            var extract = await RunFfmpegStepAsync(
+                item, fileProgress, AudioStep, ffmpeg,
+                FfmpegCommands.ExtractAudio16k(item.InputPath, audio.Ordinal, settings.DialogueDownmix, layout, wav),
+                StepKind.ExtractAudio, features, null, cancellationToken);
 
             if (extract.Cancelled) throw new OperationCanceledException(cancellationToken);
             if (!extract.Success) throw new PipelineException($"Could not extract the audio: {Tail(extract.StdErr)}");
@@ -371,8 +427,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             var label = secondPass is null ? $"Transcribing with {primaryPass.DisplayName}" : "Transcribing (English model)";
             SetStatus(item, label);
 
-            var outcome = await speech.TranscribeAsync(
-                primaryPass, wav, settings,
+            var outcome = await TranscribeStepAsync(
+                item, fileProgress, PrimaryPassStep, primaryPass, wav, features, settings,
                 line => SetStatus(item, $"{label}: {Shorten(line, 80)}"),
                 cancellationToken);
 
@@ -390,8 +446,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             if (multilingual is null)
             {
                 SetStatus(item, "Transcribing (multilingual pass)");
-                var outcome = await speech.TranscribeAsync(
-                    secondPass, wav, settings,
+                var outcome = await TranscribeStepAsync(
+                    item, fileProgress, SecondPassStep, secondPass, wav, features, settings,
                     line => SetStatus(item, "Transcribing (multilingual pass): " + Shorten(line, 80)),
                     cancellationToken);
 
@@ -443,6 +499,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             var cues = CueBuilder.Build(english, settings.MaxCps);
             if (cues.Count == 0) return;
 
+            item.EnsureCacheFolder();
             SrtWriter.Write(item.GeneratedPath, cues);
 
             if (settings.WriteOneWordSrt)
@@ -470,6 +527,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
             });
 
+            item.EnsureCacheFolder();
             File.WriteAllText(item.LanguageReportPath, json);
         }
         catch (Exception ex)
@@ -537,6 +595,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         PhononResult english,
         string ffmpeg,
         WorkFolder work,
+        FileProgress fileProgress,
+        StepFeatures features,
         CancellationToken cancellationToken)
     {
         var perChannel = new Dictionary<string, IReadOnlyList<TimeRange>>(StringComparer.Ordinal);
@@ -544,10 +604,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         var channels = ChannelLayouts.ChannelsFor(layout);
         if (channels is null) return perChannel;
 
-        var options = new HitCollectorOptions(
-            settings.WordsFull, settings.WordsSingle,
-            settings.EstimatedPadBeforeMs, settings.EstimatedPadAfterMs,
-            settings.WordPadBeforeMs, settings.WordPadAfterMs);
+        var options = HitCollectorOptions.From(settings);
 
         List<Hit> wholeCueHits = [];
         if (subtitleCues is { Count: > 0 })
@@ -569,15 +626,18 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             SetStatus(item, $"Analysing audio channel {index}/{dialogueChannels.Count} ({channel})");
 
             var channelWav = work.File($"channel-{channel}.wav");
-            var extract = await runner.RunAsync(
-                new ProcessSpec(ffmpeg, FfmpegCommands.ExtractChannel16k(item.InputPath, audio.Ordinal, channel, 2.5, channelWav)),
-                cancellationToken: cancellationToken);
+            var extract = await RunFfmpegStepAsync(
+                item, fileProgress, ChannelAudioStep(channel), ffmpeg,
+                FfmpegCommands.ExtractChannel16k(item.InputPath, audio.Ordinal, channel, 2.5, channelWav),
+                StepKind.ExtractAudio, features, null, cancellationToken);
 
             if (extract.Cancelled) throw new OperationCanceledException(cancellationToken);
 
             if (!extract.Success)
             {
                 Log.Warn($"{item.Stem}: channel {channel} could not be extracted: {Tail(extract.StdErr)}");
+                fileProgress.Drop(ChannelStep(channel));
+                ShowProgress(item, fileProgress);
                 continue;
             }
 
@@ -585,7 +645,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
             try
             {
-                transcript = (await speech.TranscribeAsync(SpeechService.Plan(settings).Primary, channelWav, settings, null, cancellationToken)).Result;
+                transcript = (await TranscribeStepAsync(
+                    item, fileProgress, ChannelStep(channel), SpeechService.Plan(settings).Primary, channelWav,
+                    features, settings, null, cancellationToken)).Result;
             }
             catch (OperationCanceledException)
             {
@@ -594,6 +656,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             catch (Exception ex)
             {
                 Log.Warn($"{item.Stem}: channel {channel} could not be transcribed: {ex.Message}");
+                fileProgress.Complete(ChannelStep(channel));
+                ShowProgress(item, fileProgress);
                 continue;
             }
 
@@ -622,6 +686,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             if (cues is not null) return (cues, MediaItem.SubtitleFileSource);
         }
 
+        // Extract subtitles unticked: the track inside the video is left alone.
+        if (!item.ExtractSubtitles) return (null, "None");
+
         var stream = StreamSelector.SelectSubtitle(probe, settings.PreferredLanguage, out var reason);
 
         if (stream is not null)
@@ -641,6 +708,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         return (null, "None");
     }
+
+    private static bool HasTextSubtitleTrack(MediaProbe probe) => probe.SubtitleStreams.Any(stream => stream.IsTextSubtitle);
 
     private static List<Cue>? TryReadSubtitleFile(string path)
     {
@@ -708,16 +777,16 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         }
     }
 
-    private static void DeleteOriginals(MediaItem item)
+    private static void DeleteOriginals(MediaItem item, bool permanently)
     {
-        RecycleBin.Send(item.InputPath);
-        RecycleBin.Send(item.SidecarPath);
-        RecycleBin.Send(item.GeneratedPath);
-        RecycleBin.Send(item.OneWordPath);
-        RecycleBin.Send(item.EnglishCachePath);
-        RecycleBin.Send(item.MultilingualCachePath);
-        RecycleBin.Send(item.TranscriptCachePath);
-        RecycleBin.Send(item.LanguageReportPath);
+        foreach (var path in new[] { item.InputPath, item.SidecarPath, item.OneWordPath })
+        {
+            if (permanently) RecycleBin.DeletePermanently(path);
+            else RecycleBin.Send(path);
+        }
+
+        // Cinema Guard's own files for this video: nothing left to re-run.
+        item.DeleteCache();
     }
 
     /// <summary>Logs which engine ran the pass; a quiet fall back to the CPU is also said on the row.</summary>
@@ -745,6 +814,153 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         item.StatusText = "Failed";
         item.Message = message;
         Log.Error($"{Path.GetFileName(item.InputPath)}: {message}");
+    }
+
+    // ---------------------------------------------------------------- progress
+
+    private const string AudioStep = "audio";
+    private const string PrimaryPassStep = "transcribe";
+    private const string SecondPassStep = "transcribe-multilingual";
+    private const string EncodeStep = "encode";
+    private const string CheckStep = "check";
+
+    private static string ChannelAudioStep(string channel) => $"channel-audio:{channel}";
+    private static string ChannelStep(string channel) => $"channel:{channel}";
+
+    /// <summary>The dialogue channels vocals-only mode transcribes one by one (the centre reuses the main transcript).</summary>
+    private static IReadOnlyList<string> VocalsChannels(AudioSelection audio)
+    {
+        var layout = audio.Stream.ChannelLayout;
+        if (!ChannelLayouts.CanSplitVocals(layout) || ChannelLayouts.ChannelsFor(layout!) is not { } channels) return [];
+
+        return channels.Where(channel => ChannelLayouts.DialogueChannels.Contains(channel) && channel != "FC").ToList();
+    }
+
+    // The expected times: what earlier runs on alike files took, the built-in guesses until there are some.
+
+    private static double ExpectedExtractSeconds(StepFeatures features) =>
+        RunHistory.Default.Estimate(StepKind.ExtractAudio, features, StepEstimates.ExtractAudio(features.DurationSeconds));
+
+    private static double ExpectedEncodeSeconds(StepFeatures features, bool reencodesAudio) =>
+        RunHistory.Default.Estimate(
+            StepKind.Encode,
+            features with { Reencode = reencodesAudio },
+            StepEstimates.Encode(features.Bytes, features.DurationSeconds, reencodesAudio));
+
+    private double ExpectedTranscribeSeconds(SpeechPass pass, AppSettings settings, StepFeatures features)
+    {
+        var device = speech.DeviceName(pass, settings);
+        var fallback = Math.Max(60, features.DurationSeconds) / RunHistory.DefaultTranscribeSpeed(pass, device);
+
+        return RunHistory.Default.Estimate(StepKind.Transcribe, features with { Engine = RunHistory.EngineKey(pass, device) }, fallback);
+    }
+
+    /// <summary>The file's expected time, its weight in the queue's overall percentage.</summary>
+    private void ShowExpected(MediaItem item, FileProgress fileProgress)
+    {
+        item.ExpectedSeconds = Math.Max(1, fileProgress.TotalWeight);
+        Raise(item);
+    }
+
+    /// <summary>
+    /// Runs an FFmpeg command that writes `-progress pipe:1`, filling the step's share as it goes. A
+    /// finished step's time is kept in the run history against the file's features.
+    /// </summary>
+    private async Task<ProcessResult> RunFfmpegStepAsync(
+        MediaItem item, FileProgress fileProgress, string step, string ffmpeg, IReadOnlyList<string> arguments,
+        StepKind kind, StepFeatures features, Action<FfmpegProgress>? onProgress, CancellationToken cancellationToken)
+    {
+        var parser = new FfmpegProgress(features.DurationSeconds);
+        var stopwatch = Stopwatch.StartNew();
+
+        var result = await runner.RunAsync(
+            new ProcessSpec(ffmpeg, arguments),
+            onStandardOutput: line =>
+            {
+                parser.Feed(line);
+                if (parser.Percent <= 0) return;
+                onProgress?.Invoke(parser);
+                fileProgress.Report(step, parser.Percent / 100);
+                ShowProgress(item, fileProgress);
+            },
+            cancellationToken: cancellationToken);
+
+        if (result.Success)
+        {
+            RunHistory.Default.Record(kind, features, stopwatch.Elapsed);
+            fileProgress.Complete(step);
+            ShowProgress(item, fileProgress);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// One transcription pass as a step. Whisper and Parakeet report their own progress; Phonon and the
+    /// server do not, so until a real value arrives the step fills by the elapsed time against what this
+    /// model took on earlier files (held at 95 % if it runs long). The time is kept for next time.
+    /// </summary>
+    private async Task<SpeechOutcome> TranscribeStepAsync(
+        MediaItem item, FileProgress fileProgress, string step, SpeechPass pass, string wav, StepFeatures features,
+        AppSettings settings, Action<string>? status, CancellationToken cancellationToken)
+    {
+        var device = speech.DeviceName(pass, settings);
+        var expected = ExpectedTranscribeSeconds(pass, settings, features);
+        var stopwatch = Stopwatch.StartNew();
+        var reported = false;
+
+        using var ticker = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var estimate = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), ticker.Token);
+                    if (reported) continue;
+                    fileProgress.Report(step, Math.Min(0.95, stopwatch.Elapsed.TotalSeconds / expected));
+                    ShowProgress(item, fileProgress);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // The pass finished or was cancelled.
+            }
+        }, CancellationToken.None);
+
+        try
+        {
+            var outcome = await speech.TranscribeAsync(pass, wav, settings, status, cancellationToken, value =>
+            {
+                reported = true;
+                fileProgress.Report(step, value / 100);
+                ShowProgress(item, fileProgress);
+            });
+
+            // A quiet fall back to the CPU ran on another device than the one the time is kept for.
+            if (outcome.Note is null)
+                RunHistory.Default.Record(StepKind.Transcribe, features with { Engine = RunHistory.EngineKey(pass, device) }, stopwatch.Elapsed);
+
+            fileProgress.Complete(step);
+            ShowProgress(item, fileProgress);
+            return outcome;
+        }
+        finally
+        {
+            ticker.Cancel();
+            await estimate;
+        }
+    }
+
+    /// <summary>Copies the file's percentage to the row; small changes are not worth a UI update.</summary>
+    private void ShowProgress(MediaItem item, FileProgress fileProgress)
+    {
+        var percent = fileProgress.Percent;
+        if (percent - item.Progress < 0.1) return;
+
+        item.Progress = percent;
+        Raise(item);
     }
 
     private void SetStatus(MediaItem item, string text)
@@ -795,19 +1011,40 @@ public sealed record QueueSummary(int Succeeded, int Skipped, int Failed, int Ca
     }
 }
 
-/// <summary>Runs a queue one file at a time. One failure never stops the rest.</summary>
+/// <summary>
+/// Runs a queue one file at a time. One failure never stops the rest. Files can join a running queue,
+/// and a file taken off it is cancelled on its own (or never started) while the others carry on.
+/// </summary>
 public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
 {
-    public async Task<QueueSummary> RunAsync(IReadOnlyList<MediaItem> items, AppSettings settings, CancellationToken cancellationToken)
+    private readonly object _gate = new();
+    private readonly HashSet<MediaItem> _removed = [];
+    private MediaItem? _current;
+    private CancellationTokenSource? _currentCancellation;
+
+    public Task<QueueSummary> RunAsync(IReadOnlyList<MediaItem> items, AppSettings settings, CancellationToken cancellationToken)
+    {
+        var queue = new Queue<MediaItem>(items);
+        return RunAsync(() => queue.TryDequeue(out var item) ? item : null, settings, cancellationToken);
+    }
+
+    /// <param name="next">The next file to run, or null when there is none. Asked after every file, so files added mid-run are picked up.</param>
+    public async Task<QueueSummary> RunAsync(Func<MediaItem?> next, AppSettings settings, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        var ran = new List<MediaItem>();
+
+        lock (_gate) _removed.Clear();
         KeepAwake.Start();
         speech.BeginSession();
 
         try
         {
-            foreach (var item in items)
+            while (next() is { } item)
             {
+                if (IsRemoved(item)) continue;
+                ran.Add(item);
+
                 if (cancellationToken.IsCancellationRequested)
                 {
                     item.Status = MediaStatus.Cancelled;
@@ -816,7 +1053,25 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
                     continue;
                 }
 
-                await pipeline.RunAsync(item, settings, cancellationToken);
+                using var itemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                lock (_gate)
+                {
+                    _current = item;
+                    _currentCancellation = itemCancellation;
+                }
+
+                try
+                {
+                    await pipeline.RunAsync(item, settings, itemCancellation.Token);
+                }
+                finally
+                {
+                    lock (_gate)
+                    {
+                        _current = null;
+                        _currentCancellation = null;
+                    }
+                }
             }
         }
         finally
@@ -827,11 +1082,40 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
             stopwatch.Stop();
         }
 
+        // Files taken off the queue are not part of its outcome.
+        var counted = ran.Where(item => !IsRemoved(item)).ToList();
+
         return new QueueSummary(
-            items.Count(i => i.Status == MediaStatus.Succeeded),
-            items.Count(i => i.Status == MediaStatus.Skipped),
-            items.Count(i => i.Status == MediaStatus.Failed),
-            items.Count(i => i.Status == MediaStatus.Cancelled),
+            counted.Count(i => i.Status == MediaStatus.Succeeded),
+            counted.Count(i => i.Status == MediaStatus.Skipped),
+            counted.Count(i => i.Status == MediaStatus.Failed),
+            counted.Count(i => i.Status == MediaStatus.Cancelled),
             stopwatch.Elapsed);
+    }
+
+    /// <summary>Takes a file off the running queue: cancels it if it is the one running, and never starts it otherwise.</summary>
+    public void Remove(MediaItem item)
+    {
+        CancellationTokenSource? cancellation;
+
+        lock (_gate)
+        {
+            _removed.Add(item);
+            cancellation = ReferenceEquals(_current, item) ? _currentCancellation : null;
+        }
+
+        try
+        {
+            cancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The file finished in the meantime.
+        }
+    }
+
+    private bool IsRemoved(MediaItem item)
+    {
+        lock (_gate) return _removed.Contains(item);
     }
 }

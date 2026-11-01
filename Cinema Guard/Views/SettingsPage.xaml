@@ -39,9 +39,9 @@
 
                         <controls:SettingRow Header="Aspect ratio" Description="Width : height">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.AspectWidth, Mode=TwoWay}" />
+                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectWidth, Mode=TwoWay}" />
                                 <TextBlock Text=":" VerticalAlignment="Center" />
-                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.AspectHeight, Mode=TwoWay}" />
+                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectHeight, Mode=TwoWay}" />
                             </StackPanel>
                         </controls:SettingRow>
                     </StackPanel>
@@ -94,17 +94,31 @@
                             <Button Content="Edit filter" Click="EditFilter_Click" />
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Padding for subtitle hits (ms)" Description="Before and after the estimated word time, when only the subtitle knows the word.">
+                        <!-- Extra silence added either side of each mute, in milliseconds. -->
+                        <controls:SettingRow
+                            Header="Extra mute: single word the speech model heard"
+                            Description="Words on the &quot;mute the word only&quot; list. The speech model knows when the word is said, so a little extra before and after covers the start and tail of the word. In milliseconds.">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.EstimatedPadBefore, Mode=TwoWay}" />
-                                <NumberBox Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.EstimatedPadAfter, Mode=TwoWay}" />
+                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadBefore, Mode=TwoWay}" />
+                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadAfter, Mode=TwoWay}" />
                             </StackPanel>
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Padding for timed words (ms)" Description="Before and after the word timing from the speech model.">
+                        <controls:SettingRow
+                            Header="Extra mute: single word only the subtitles have"
+                            Description="Words on the &quot;mute the word only&quot; list that the speech model missed. The moment is guessed from where the word sits in the subtitle line, so allow more either side. In milliseconds.">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.WordPadBefore, Mode=TwoWay}" />
-                                <NumberBox Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.WordPadAfter, Mode=TwoWay}" />
+                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadBefore, Mode=TwoWay}" />
+                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadAfter, Mode=TwoWay}" />
+                            </StackPanel>
+                        </controls:SettingRow>
+
+                        <controls:SettingRow
+                            Header="Extra mute: whole sentence"
+                            Description="Words on the &quot;mute the whole sentence&quot; list (such as Jesus): the subtitle line, or the speech model's sentence, is muted with this much extra either side. Raise After when subtitles appear before the line is spoken, Before when they appear late. In milliseconds.">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadBefore, Mode=TwoWay}" />
+                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadAfter, Mode=TwoWay}" />
                             </StackPanel>
                         </controls:SettingRow>
                     </StackPanel>
@@ -123,7 +137,7 @@
                         </controls:SettingRow>
 
                         <controls:SettingRow Header="Subtitle reading speed" Description="Characters per second ceiling for generated cues (21 is standard).">
-                            <NumberBox Width="110" Minimum="8" Maximum="45" SmallChange="0.5" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.MaxCpsValue, Mode=TwoWay}" />
+                            <NumberBox Width="110" Minimum="8" Maximum="45" SmallChange="0.5" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.MaxCpsValue, Mode=TwoWay}" />
                         </controls:SettingRow>
 
                         <controls:SettingRow Header="Audio downmix for transcription" Description="Weight the centre channel where dialogue lives.">
@@ -139,8 +153,8 @@
                 <TextBlock Text="PHONON ON THE GPU (DOCKER, OPTIONAL)" Style="{StaticResource SectionHeaderStyle}" />
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel>
-                        <controls:SettingRow Header="Docker image" Description="Fermion's published CUDA image. Used when a Phonon model's switch on the Models page is set to GPU and Docker Desktop is installed.">
-                            <TextBox Width="360" Text="{x:Bind ViewModel.S.DockerImage, Mode=TwoWay}" />
+                        <controls:SettingRow Header="Docker image" Description="Fermion's published CUDA image, used when Phonon's GPU switch on the Models page is on. Each Cinema Guard update brings the image it is tested with and offers the download; a newer or different image typed here stays. Leave it empty to go back to the recommended one.">
+                            <TextBox Width="360" Text="{x:Bind ViewModel.S.DockerImage, Mode=TwoWay}" PlaceholderText="{x:Bind ViewModel.RecommendedDockerImage}" />
                         </controls:SettingRow>
 
                         <controls:SettingRow Header="Start Docker Desktop when needed" Description="Waits up to 90 seconds for Docker before falling back to the CPU.">
@@ -187,12 +201,24 @@
                             <ToggleSwitch IsOn="{x:Bind ViewModel.S.SkipAlreadyProcessed, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Send originals to the Recycle Bin" Description="Only after the output passed validation. The Recycle Bin, never a permanent delete.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.DeleteOriginalFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        <controls:SettingRow Header="After censoring, the originals" Description="Only after the output passed validation. Removes the video, its subtitle file and its saved transcripts. Delete permanently skips the Recycle Bin and cannot be undone.">
+                            <ComboBox MinWidth="200" SelectedIndex="{x:Bind ViewModel.OriginalsIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="Keep" />
+                                <ComboBoxItem Content="Send to the Recycle Bin" />
+                                <ComboBoxItem Content="Delete permanently" />
+                            </ComboBox>
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Always generate subtitles" Description="Tick Generate for every new file, even when a subtitle already exists.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.AlwaysGenerateSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        <controls:SettingRow Header="Generate subtitles for new files" Description="Ticks Generate subtitles on every file you add, so the speech model transcribes it. Most accurate, but it takes the longest. Off: you tick it per file.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.GenerateSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        </controls:SettingRow>
+
+                        <controls:SettingRow Header="Extract subtitles for new files" Description="Ticks Extract subtitles on every file you add: the subtitle track inside the video is read and used to find words, together with the speech model. Nothing is written beside the video, and a file without a subtitle track simply carries on without one.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.ExtractSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                        </controls:SettingRow>
+
+                        <controls:SettingRow Header="Keep transcripts for re-runs" Description="Saves each file's transcript in Cinema Guard's own folder, never beside the video, so censoring it again skips the speech model. Unused transcripts are removed after 30 days. Off: they are removed as soon as the file is done.">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepTranscripts, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
 
                         <controls:SettingRow Header="Always re-decode" Description="Ignore the saved transcripts and transcribe again.">

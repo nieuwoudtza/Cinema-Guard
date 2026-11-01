@@ -40,14 +40,27 @@ public sealed class AppSettings
     // Filter
     public List<string> WordsFull { get; set; } = [];
     public List<string> WordsSingle { get; set; } = [];
+    // Extra mute either side of a hit. Single words: around the speech model's word timing, or around
+    // the guessed spot when only the subtitles have the word. Whole lines (the sentence list): around
+    // the subtitle line or the model's sentence, which covers subtitles timed early or late.
     public int EstimatedPadBeforeMs { get; set; } = 500;
     public int EstimatedPadAfterMs { get; set; } = 500;
     public int WordPadBeforeMs { get; set; } = 150;
     public int WordPadAfterMs { get; set; } = 250;
+    public int LinePadBeforeMs { get; set; } = 250;
+    public int LinePadAfterMs { get; set; } = 500;
 
     // Transcription
     public PhononRuntimeMode PhononRuntime { get; set; } = PhononRuntimeMode.Auto;
-    public string DockerImage { get; set; } = "ghcr.io/fermionresearch/phonon-cuda:1.0.11";
+
+    /// <summary>
+    /// The Phonon CUDA image this version of Cinema Guard is tested with. A new app version moves it on
+    /// (bump it here); a saved setting left on an older build follows (<see cref="Normalise"/>), the
+    /// queue and the Tools page then offer the download, and the old image is removed once the new one is in.
+    /// </summary>
+    public const string RecommendedDockerImage = "ghcr.io/fermionresearch/phonon-cuda:1.0.11";
+
+    public string DockerImage { get; set; } = RecommendedDockerImage;
     public string? DockerPath { get; set; }
     public string? LocalFermionPath { get; set; }
     public string? FfmpegPath { get; set; }
@@ -87,7 +100,21 @@ public sealed class AppSettings
     public bool KeepOriginalAudio { get; set; }
     public bool SkipMediaNoSwearing { get; set; } = true;
     public bool DeleteOriginalFiles { get; set; }
-    public bool AlwaysGenerateSubtitles { get; set; } = true;
+
+    /// <summary>With <see cref="DeleteOriginalFiles"/> on: delete the originals for good instead of sending them to the Recycle Bin.</summary>
+    public bool DeleteOriginalsPermanently { get; set; }
+    /// <summary>Tick Generate subtitles on every file added to the queue. Off: nothing is transcribed unless ticked by hand.</summary>
+    public bool GenerateSubtitlesForNewFiles { get; set; }
+
+    /// <summary>Tick Extract subtitles on every file added: the subtitle track inside the video is read and used to find words.</summary>
+    public bool ExtractSubtitlesForNewFiles { get; set; } = true;
+
+    /// <summary>
+    /// Keep each file's transcripts and generated subtitles in Cinema Guard's own folder (never beside the
+    /// video), so censoring it again skips transcription. Unused ones are removed after 30 days. Off: a
+    /// file's are removed as soon as it is done.
+    /// </summary>
+    public bool KeepTranscripts { get; set; } = true;
     public bool AlwaysOverwriteSubtitles { get; set; }
     public bool AlignSubtitleFiles { get; set; } = true;
     public bool RetimeOutputSubtitles { get; set; } = true;
@@ -138,6 +165,8 @@ public sealed class AppSettings
         EstimatedPadAfterMs = Math.Clamp(EstimatedPadAfterMs, 0, 5000);
         WordPadBeforeMs = Math.Clamp(WordPadBeforeMs, 0, 2000);
         WordPadAfterMs = Math.Clamp(WordPadAfterMs, 0, 2000);
+        LinePadBeforeMs = Math.Clamp(LinePadBeforeMs, 0, 5000);
+        LinePadAfterMs = Math.Clamp(LinePadAfterMs, 0, 5000);
         MaxCps = Math.Clamp(MaxCps, 8, 45);
 
         WordsFull = CleanWords(WordsFull);
@@ -146,8 +175,7 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(PreferredLanguage) || PreferredLanguage.Equals("Detect", StringComparison.OrdinalIgnoreCase))
             PreferredLanguage = "eng";
 
-        if (string.IsNullOrWhiteSpace(DockerImage))
-            DockerImage = "ghcr.io/fermionresearch/phonon-cuda:1.0.11";
+        DockerImage = Phonon.DockerImages.Follow(DockerImage, RecommendedDockerImage);
 
         // Version 3 replaced the multilingual-pass checkbox with the speech model choice.
         if (SchemaVersion < 3)

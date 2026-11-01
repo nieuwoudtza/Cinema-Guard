@@ -179,7 +179,7 @@ public sealed class PhononService(IProcessRunner runner, ToolLocator locator)
                 }
 
                 if (!await ImageExistsAsync(docker, settings.DockerImage, cancellationToken))
-                    throw new PhononException(unavailable = $"The Docker image {settings.DockerImage} is not downloaded.");
+                    throw new PhononException(unavailable = "the GPU image is not downloaded yet; press Download image on the Tools page");
 
                 var result = await RunSerialisedAsync(
                     new DockerPhononRunner(docker, settings.DockerImage, runner), wavPath, model, settings.PhononHotwords, onLog, cancellationToken);
@@ -262,6 +262,15 @@ public sealed class PhononService(IProcessRunner runner, ToolLocator locator)
         var result = await runner.RunAsync(new ProcessSpec(docker, ["image", "inspect", image, "--format", "{{.Id}}"]),
             cancellationToken: cancellationToken);
         return result.Success;
+    }
+
+    /// <summary>Starts Docker Desktop when its engine is down and waits for it (up to 90 s). True once the engine answers.</summary>
+    public async Task<bool> EnsureEngineAsync(string docker, Action<string>? onLog, CancellationToken cancellationToken)
+    {
+        if (await IsEngineReadyAsync(docker, cancellationToken)) return true;
+
+        await StartDockerDesktopAsync(docker, onLog, cancellationToken);
+        return await IsEngineReadyAsync(docker, cancellationToken);
     }
 
     private async Task StartDockerDesktopAsync(string docker, Action<string>? onLog, CancellationToken cancellationToken)

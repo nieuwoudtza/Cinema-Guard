@@ -19,6 +19,8 @@ public class SettingsTests
         Assert.True(settings.CreateSubtitles);
         Assert.True(settings.EmbedSubtitles);
         Assert.Equal("_CG", settings.CustomAffix);
+        Assert.False(settings.DeleteOriginalFiles);
+        Assert.False(settings.DeleteOriginalsPermanently);
     }
 
     [Fact]

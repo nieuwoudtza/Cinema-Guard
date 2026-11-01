@@ -13,6 +13,8 @@ public sealed class MediaStreamInfo
     public string? ChannelLayout { get; init; }
     public int? SampleRate { get; init; }
     public long? BitRate { get; init; }
+    public int? Width { get; init; }
+    public int? Height { get; init; }
     public double? StartTime { get; init; }
     public bool IsDefault { get; init; }
     public bool IsForced { get; init; }
@@ -107,6 +109,8 @@ public static class MediaProbeParser
             ChannelLayout = GetString(stream, "channel_layout"),
             SampleRate = GetInt(stream, "sample_rate"),
             BitRate = GetLong(stream, "bit_rate"),
+            Width = GetInt(stream, "width"),
+            Height = GetInt(stream, "height"),
             StartTime = GetDouble(stream, "start_time"),
             IsDefault = GetInt(disposition, "default") == 1,
             IsForced = GetInt(disposition, "forced") == 1,

@@ -1,6 +1,10 @@
 <Project>
   <PropertyGroup>
-    <!-- One version for the app, the core library and the Velopack release. publish.ps1 overrides it with -p:Version. -->
+    <!--
+      The fallback version. Every build of the app numbers itself yyyy.MM.dd.<n> (Directory.Build.targets),
+      and publish.ps1 passes the release version with -p:Version, so this only shows on the core library
+      and the tests.
+    -->
     <Version>2.0.1</Version>
     <Company>WaveBit</Company>
     <Product>Cinema Guard</Product>

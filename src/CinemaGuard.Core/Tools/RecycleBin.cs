@@ -25,6 +25,24 @@ public static class RecycleBin
             return false;
         }
     }
+
+    /// <summary>Deletes a file for good, skipping the Recycle Bin. Never throws.</summary>
+    public static bool DeletePermanently(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+
+        try
+        {
+            File.Delete(path);
+            Log.Info($"Deleted permanently: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not delete {path}: {ex.Message}");
+            return false;
+        }
+    }
 }
 
 /// <summary>Stops the machine sleeping while a queue is running.</summary>

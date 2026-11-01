@@ -8,14 +8,19 @@ namespace CinemaGuard.Core;
 public static class CoreInfo
 {
     /// <summary>
-    /// The release version as people see it ("2026.11.01.1"; Directory.Build.props for a dev build),
-    /// without the +commit suffix. publish.ps1 sets it as InformationalVersion.
+    /// The version as people see it ("2026.11.01.1"), without the +commit suffix. publish.ps1 sets it as
+    /// InformationalVersion for a release; every dev build of the app numbers itself the same way
+    /// (Directory.Build.targets).
     /// </summary>
     public static string Version { get; } = DisplayVersion(ReadVersion());
 
     private static string ReadVersion()
     {
-        var version = typeof(CoreInfo).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
+        // Only the app is numbered per build; this library keeps the fallback, so ask the running exe first.
+        var entry = Assembly.GetEntryAssembly();
+        var source = entry?.GetCustomAttribute<AssemblyProductAttribute>()?.Product == "Cinema Guard" ? entry : typeof(CoreInfo).Assembly;
+
+        var version = source.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
         var plus = version.IndexOf('+');
         return plus < 0 ? version : version[..plus];
     }

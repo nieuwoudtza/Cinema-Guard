@@ -11,21 +11,14 @@
 
     <Grid Padding="24,14,24,12" RowDefinitions="Auto,*,Auto">
 
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
-            <StackPanel Spacing="2">
-                <TextBlock Text="Tools" Style="{StaticResource PageTitleStyle}" />
-                <TextBlock
-                    Text="{x:Bind ViewModel.RuntimeSummary, Mode=OneWay}"
-                    Style="{StaticResource MutedStyle}"
-                    TextWrapping="Wrap" />
-            </StackPanel>
-            <ProgressRing
-                Grid.Column="1"
-                Width="20"
-                Height="20"
-                IsActive="{x:Bind ViewModel.IsChecking, Mode=OneWay}"
-                VerticalAlignment="Center" />
-        </Grid>
+        <!-- Each tool row shows its own spinner while it is checked. -->
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
+            <TextBlock Text="Tools" Style="{StaticResource PageTitleStyle}" />
+            <TextBlock
+                Text="{x:Bind ViewModel.RuntimeSummary, Mode=OneWay}"
+                Style="{StaticResource MutedStyle}"
+                TextWrapping="Wrap" />
+        </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="8" Padding="0,0,4,16" MaxWidth="920" HorizontalAlignment="Left">
@@ -45,7 +38,7 @@
                             <StackPanel Spacing="2">
                                 <TextBlock Text="Set up Cinema Guard" FontWeight="SemiBold" FontSize="16" />
                                 <TextBlock
-                                    Text="Two downloads and you are ready. The recommended settings are already chosen, so there is nothing else to configure."
+                                    Text="One button downloads everything below. The recommended settings are already chosen, so there is nothing else to configure."
                                     Style="{StaticResource MutedStyle}"
                                     TextWrapping="Wrap" />
                             </StackPanel>
@@ -76,6 +69,23 @@
                             <TextBlock
                                 Grid.Column="2"
                                 Text="{x:Bind ViewModel.ModelState, Mode=OneWay}"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource MutedStyle}" />
+                        </Grid>
+
+                        <!-- Only when Docker runs on an NVIDIA PC and the image is missing. -->
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Visibility="{x:Bind ViewModel.GpuImageMissing, Mode=OneWay}">
+                            <FontIcon Glyph="&#xE7F4;" FontSize="14" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="1">
+                                <TextBlock Text="GPU image for Docker" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="Lets Phonon run on your NVIDIA graphics card, many times faster than the CPU. Several GB, downloaded once."
+                                    Style="{StaticResource MutedStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="2"
+                                Text="{x:Bind ViewModel.GpuImageState, Mode=OneWay}"
                                 VerticalAlignment="Center"
                                 Style="{StaticResource MutedStyle}" />
                         </Grid>
@@ -113,23 +123,43 @@
                         <ItemsControl ItemsSource="{x:Bind ViewModel.Tools}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ToolRow">
-                                    <Grid Padding="16,11" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <FontIcon
-                                            Glyph="{x:Bind Glyph}"
-                                            Foreground="{x:Bind Brush}"
-                                            FontSize="16"
-                                            VerticalAlignment="Center" />
+                                    <Grid Padding="16,11" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                                        <!-- The spinner while this tool is checked, then its tick or cross in the same spot. -->
+                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                            <ProgressRing
+                                                Width="16"
+                                                Height="16"
+                                                IsActive="{x:Bind IsChecking, Mode=OneWay}" />
+                                            <FontIcon
+                                                Glyph="{x:Bind Glyph, Mode=OneWay}"
+                                                Foreground="{x:Bind Brush, Mode=OneWay}"
+                                                FontSize="16"
+                                                Visibility="{x:Bind ResultVisibility, Mode=OneWay}" />
+                                        </Grid>
                                         <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind Name, Mode=OneWay}" FontWeight="SemiBold" />
                                             <TextBlock
-                                                Text="{x:Bind Location}"
+                                                Text="{x:Bind Location, Mode=OneWay}"
                                                 Style="{StaticResource MutedStyle}"
                                                 TextTrimming="CharacterEllipsis" />
+                                            <ProgressBar
+                                                Margin="0,4,0,0"
+                                                Maximum="100"
+                                                Value="{x:Bind Progress, Mode=OneWay}"
+                                                IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
+                                                Visibility="{x:Bind IsBusy, Mode=OneWay}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind Status}" HorizontalAlignment="Right" />
-                                            <TextBlock Text="{x:Bind Version}" Style="{StaticResource MutedStyle}" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{x:Bind Status, Mode=OneWay}" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{x:Bind Version, Mode=OneWay}" Style="{StaticResource MutedStyle}" HorizontalAlignment="Right" />
                                         </StackPanel>
+                                        <Button
+                                            Grid.Column="3"
+                                            VerticalAlignment="Center"
+                                            Content="{x:Bind ActionText, Mode=OneWay}"
+                                            ToolTipService.ToolTip="{x:Bind ActionTip, Mode=OneWay}"
+                                            Visibility="{x:Bind HasAction, Mode=OneWay}"
+                                            Click="ToolAction_Click" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -137,7 +167,11 @@
                     </StackPanel>
                 </Border>
 
-                <Button Content="Check again" Click="Recheck_Click" HorizontalAlignment="Left" />
+                <Button
+                    Content="Check again"
+                    Click="Recheck_Click"
+                    HorizontalAlignment="Left"
+                    IsEnabled="{x:Bind ViewModel.CanCheck, Mode=OneWay}" />
 
                 <TextBlock Text="SHELL" Style="{StaticResource SectionHeaderStyle}" />
                 <Border Style="{StaticResource CardBorderStyle}">

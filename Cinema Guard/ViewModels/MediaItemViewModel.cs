@@ -40,11 +40,35 @@ public sealed partial class MediaItemViewModel : ObservableObject
         }
     }
 
+    public bool ExtractSubtitles
+    {
+        get => Item.ExtractSubtitles;
+        set
+        {
+            if (Item.ExtractSubtitles == value) return;
+            Item.ExtractSubtitles = value;
+            OnPropertyChanged();
+        }
+    }
+
     [ObservableProperty] private string _status = "Waiting";
     [ObservableProperty] private string _detail = string.Empty;
     [ObservableProperty] private double _progress;
     [ObservableProperty] private bool _isIndeterminate;
     [ObservableProperty] private Visibility _progressVisibility = Visibility.Collapsed;
+
+    /// <summary>The whole file's percentage beside the bar; empty while the bar still animates (preparing, loading).</summary>
+    [ObservableProperty] private string _progressText = string.Empty;
+
+    /// <summary>Time spent on this file: counting while it runs, the total once it has finished; empty before it starts.</summary>
+    [ObservableProperty] private string _elapsedText = string.Empty;
+
+    /// <summary>"about 5 min left" while the file runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRemaining))]
+    private string _remainingText = string.Empty;
+
+    public bool HasRemaining => RemainingText.Length > 0;
     [ObservableProperty] private string _sourceBadge = "No subtitles";
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _hitText = string.Empty;
@@ -75,6 +99,8 @@ public sealed partial class MediaItemViewModel : ObservableObject
         var running = Item.Status == MediaStatus.Running;
         IsIndeterminate = running && Item.Progress <= 0.1;
         ProgressVisibility = running ? Visibility.Visible : Visibility.Collapsed;
+        ProgressText = running && !IsIndeterminate ? $"{Math.Floor(Item.Progress):0}%" : string.Empty;
+        RefreshElapsed();
 
         SourceBadge = string.IsNullOrWhiteSpace(Item.SubtitleSource) || Item.SubtitleSource == "None"
             ? "No subtitles"
@@ -99,6 +125,15 @@ public sealed partial class MediaItemViewModel : ObservableObject
         ResultBrush = brush;
     }
 
+    /// <summary>Called every second for the running file, so its time counts up and the time left counts down.</summary>
+    public void RefreshElapsed()
+    {
+        ElapsedText = Item.Elapsed is { } elapsed ? MainViewModel.FormatElapsed(elapsed) : string.Empty;
+        RemainingText = Item.Status == MediaStatus.Running && Item.EstimatedRemaining is { } left
+            ? MainViewModel.FormatRemaining(left)
+            : string.Empty;
+    }
+
     public void ResetForRun()
     {
         Item.Status = MediaStatus.Waiting;
@@ -106,6 +141,11 @@ public sealed partial class MediaItemViewModel : ObservableObject
         Item.Message = null;
         Item.Progress = 0;
         Item.Hits = null;
+        Item.StartedAt = null;
+        Item.FinishedAt = null;
+
+        // Its weight in the overall percentage until the run knows more (Generate may have changed since it was added).
+        Item.ExpectedSeconds = RunHistory.Default.EstimateFile(Item.InputPath, Item.GenerateSubtitles);
         Sync();
     }
 }

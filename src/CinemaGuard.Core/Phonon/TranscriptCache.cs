@@ -40,7 +40,7 @@ public sealed class TranscriptCacheFile
     public PhononResult Result { get; set; } = new();
 }
 
-/// <summary>Stores the raw Phonon JSON next to the media so a re-run never decodes again.</summary>
+/// <summary>Stores the raw transcript JSON in the file's cache folder so a re-run never decodes again.</summary>
 public static class TranscriptCache
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -90,6 +90,7 @@ public static class TranscriptCache
         try
         {
             var cache = new TranscriptCacheFile { Source = source, Result = result };
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, JsonSerializer.Serialize(cache, Options));
         }
         catch (Exception ex)

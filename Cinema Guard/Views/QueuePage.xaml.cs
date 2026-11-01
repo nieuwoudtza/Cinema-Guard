@@ -93,21 +93,20 @@ public sealed partial class QueuePage : Page
         if (e.PropertyName == nameof(MainViewModel.IsRunning)) UpdateSelectionBar();
     }
 
-    /// <summary>Says what the subtitle buttons will work on, and enables removing only when it can happen.</summary>
+    /// <summary>The subtitle buttons work on the selected files only, so they are off until something is selected.</summary>
     private void UpdateSelectionBar()
     {
         var selected = MediaList.SelectedItems.Count;
         var total = ViewModel.Items.Count;
 
-        SelectionText.Text = selected == 0
-            ? "No files selected: the buttons above work on every file"
-            : $"{selected} of {total} selected";
+        SelectionText.Text = selected == 0 ? "No files selected" : $"{selected} of {total} selected";
 
-        RemoveSelectedButton.IsEnabled = selected > 0 && !ViewModel.IsRunning;
-        ClearButton.IsEnabled = total > 0 && !ViewModel.IsRunning;
+        // Removing works while the queue runs too: the running file is cancelled first.
+        RemoveSelectedButton.IsEnabled = selected > 0;
+        ClearButton.IsEnabled = total > 0;
 
-        // These do nothing while the queue runs.
-        GenerateButton.IsEnabled = ExtractButton.IsEnabled = DownloadButton.IsEnabled = !ViewModel.IsRunning;
+        // These also do nothing while the queue runs.
+        GenerateButton.IsEnabled = ExtractButton.IsEnabled = DownloadButton.IsEnabled = selected > 0 && !ViewModel.IsRunning;
     }
 
     // ---------------------------------------------------------------- context menu
@@ -162,12 +161,6 @@ public sealed partial class QueuePage : Page
 
     private IEnumerable<MediaItemViewModel> SelectedTargets() =>
         MediaList.SelectedItems.OfType<MediaItemViewModel>().ToList();
-
-    private IEnumerable<MediaItemViewModel> Targets()
-    {
-        var selected = SelectedTargets().ToList();
-        return selected.Count > 0 ? selected : ViewModel.Items;
-    }
 
     private static IntPtr WindowHandle => WindowHelper.GetHandle(App.Shell);
 
@@ -237,19 +230,19 @@ public sealed partial class QueuePage : Page
 
     private void Stop_Click(object sender, RoutedEventArgs e) => ViewModel.Stop();
 
-    private void GenerateSplit_Click(SplitButton sender, SplitButtonClickEventArgs args) => ViewModel.SetGenerateMode(GenerateMode.All, Targets());
+    private void GenerateSplit_Click(SplitButton sender, SplitButtonClickEventArgs args) => ViewModel.SetGenerateMode(GenerateMode.All, SelectedTargets());
 
-    private void GenerateAll_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.All, Targets());
+    private void GenerateAll_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.All, SelectedTargets());
 
-    private void GenerateMissing_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.Missing, Targets());
+    private void GenerateMissing_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.Missing, SelectedTargets());
 
-    private void GenerateNone_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.None, Targets());
+    private void GenerateNone_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.None, SelectedTargets());
 
     private void GenerateMenu_Click(object sender, RoutedEventArgs e) => ViewModel.SetGenerateMode(GenerateMode.All, ContextTargets());
 
-    private async void Extract_Click(object sender, RoutedEventArgs e) => await ViewModel.ExtractSubtitlesAsync(Targets());
+    private async void Extract_Click(object sender, RoutedEventArgs e) => await ViewModel.ExtractSubtitlesAsync(SelectedTargets());
 
-    private async void Download_Click(object sender, RoutedEventArgs e) => await ViewModel.DownloadSubtitlesAsync(Targets());
+    private async void Download_Click(object sender, RoutedEventArgs e) => await ViewModel.DownloadSubtitlesAsync(SelectedTargets());
 
     private async void ExtractMenu_Click(object sender, RoutedEventArgs e) => await ViewModel.ExtractSubtitlesAsync(ContextTargets());
 
@@ -257,9 +250,14 @@ public sealed partial class QueuePage : Page
 
     private async void Clear_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.IsRunning || ViewModel.Items.Count == 0) return;
+        if (ViewModel.Items.Count == 0) return;
 
-        if (await Dialogs.ConfirmAsync(XamlRoot, "Clear the queue?", "Remove every file from the queue?", "Clear"))
+        var running = ViewModel.Items.FirstOrDefault(item => item.Item.Status == CinemaGuard.Core.Pipeline.MediaStatus.Running);
+        var message = running is null
+            ? "Remove every file from the queue?"
+            : $"Remove every file from the queue? “{running.FileName}” is being censored now; it will be cancelled and its unfinished output deleted.";
+
+        if (await Dialogs.ConfirmAsync(XamlRoot, "Clear the queue?", message, "Clear"))
             ViewModel.Clear();
     }
 
@@ -267,16 +265,24 @@ public sealed partial class QueuePage : Page
 
     private async void RemoveMenu_Click(object sender, RoutedEventArgs e) => await RemoveAsync(ContextTargets());
 
+    /// <summary>Files that have not started (or have finished) go at once; the running file is cancelled, after a warning.</summary>
     private async Task RemoveAsync(List<MediaItemViewModel> targets)
     {
         if (targets.Count == 0) return;
 
-        if (await Dialogs.ConfirmAsync(XamlRoot, "Remove from the queue?",
-                targets.Count == 1 ? "Remove this file from the queue?" : $"Remove these {targets.Count} files from the queue?",
-                "Remove"))
+        var running = targets.FirstOrDefault(item => item.Item.Status == CinemaGuard.Core.Pipeline.MediaStatus.Running);
+
+        if (running is not null)
         {
-            ViewModel.Remove(targets);
+            var others = targets.Count - 1;
+            var message = $"“{running.FileName}” is being censored now. Removing it cancels it and deletes its unfinished output." +
+                          (others > 0 ? $" The other {(others == 1 ? "file" : $"{others} files")} will be removed too." : string.Empty);
+
+            if (!await Dialogs.ConfirmAsync(XamlRoot, "Cancel and remove?", message, "Cancel and remove", "Keep it"))
+                return;
         }
+
+        ViewModel.Remove(targets);
     }
 
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
@@ -387,14 +393,14 @@ public sealed partial class QueuePage : Page
 
     // ---------------------------------------------------------------- keyboard
 
-    private void MediaList_KeyDown(object sender, KeyRoutedEventArgs e)
+    private async void MediaList_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key != VirtualKey.Delete || ViewModel.IsRunning) return;
+        if (e.Key != VirtualKey.Delete) return;
 
         var selected = SelectedTargets().ToList();
         if (selected.Count == 0) return;
 
-        ViewModel.Remove(selected);
         e.Handled = true;
+        await RemoveAsync(selected);
     }
 }

@@ -86,12 +86,12 @@
                     x:Name="GenerateButton"
                     Content="Generate subtitles"
                     Click="GenerateSplit_Click"
-                    ToolTipService.ToolTip="Tick Generate subtitles on the selected files (or every file when none are selected). The speech model then transcribes their dialogue when you press Censor.">
+                    ToolTipService.ToolTip="Tick Generate subtitles on the selected files. The speech model then transcribes their dialogue when you press Censor.">
                     <SplitButton.Flyout>
                         <MenuFlyout Placement="Bottom">
-                            <MenuFlyoutItem Text="All files" Click="GenerateAll_Click" />
-                            <MenuFlyoutItem Text="Files without any subtitles" Click="GenerateMissing_Click" />
-                            <MenuFlyoutItem Text="None" Click="GenerateNone_Click" />
+                            <MenuFlyoutItem Text="All selected files" Click="GenerateAll_Click" />
+                            <MenuFlyoutItem Text="Selected files without any subtitles" Click="GenerateMissing_Click" />
+                            <MenuFlyoutItem Text="None of the selected files" Click="GenerateNone_Click" />
                         </MenuFlyout>
                     </SplitButton.Flyout>
                 </SplitButton>
@@ -100,11 +100,11 @@
                     x:Name="ExtractButton"
                     Style="{StaticResource TransparentButtonStyle}"
                     Click="Extract_Click"
-                    AutomationProperties.Name="Extract subtitles"
-                    ToolTipService.ToolTip="Copy the subtitle track inside the video to an .srt file beside it. Works on the selected files, or every file when none are selected.">
+                    AutomationProperties.Name="Save subtitles as .srt"
+                    ToolTipService.ToolTip="Copy the subtitle track inside each selected video to an .srt file beside it, to keep or edit. (To just use the track for finding words, tick Extract subtitles on the file.)">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE8C8;" FontSize="14" />
-                        <TextBlock Text="Extract subtitles" />
+                        <TextBlock Text="Save subtitles as .srt" />
                     </StackPanel>
                 </Button>
 
@@ -113,7 +113,7 @@
                     Style="{StaticResource TransparentButtonStyle}"
                     Click="Download_Click"
                     AutomationProperties.Name="Download subtitles"
-                    ToolTipService.ToolTip="Download subtitles from OpenSubtitles to an .srt file beside the video. Works on the selected files, or every file when none are selected.">
+                    ToolTipService.ToolTip="Download subtitles from OpenSubtitles to an .srt file beside each selected video.">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE896;" FontSize="14" />
                         <TextBlock Text="Download subtitles" />
@@ -150,7 +150,7 @@
                     Click="Remove_Click"
                     IsEnabled="False"
                     AutomationProperties.Name="Remove selected"
-                    ToolTipService.ToolTip="Take the selected files off the queue (Delete). The files on disk are not touched.">
+                    ToolTipService.ToolTip="Take the selected files off the queue (Delete). A file being censored is cancelled first. The files on disk are not touched.">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE74D;" FontSize="14" />
                         <TextBlock Text="Remove selected" />
@@ -208,13 +208,13 @@
                         <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" />
                         <MenuFlyoutItem Text="Language report" Click="LanguageReport_Click" />
                         <MenuFlyoutSeparator Tag="idle" />
-                        <MenuFlyoutItem Tag="idle" Text="Extract subtitles" Click="ExtractMenu_Click" />
+                        <MenuFlyoutItem Tag="idle" Text="Save subtitles as .srt" Click="ExtractMenu_Click" />
                         <MenuFlyoutItem Tag="idle" Text="Download subtitles" Click="DownloadMenu_Click" />
                         <MenuFlyoutItem Tag="idle" Text="Generate subtitles" Click="GenerateMenu_Click" />
                         <MenuFlyoutItem Tag="idle" Text="Select subtitles…" Click="SelectSubtitles_Click" />
                         <MenuFlyoutSeparator />
                         <MenuFlyoutItem Text="Open folder" Click="OpenFolder_Click" />
-                        <MenuFlyoutItem Tag="idle" Text="Remove" Click="RemoveMenu_Click" />
+                        <MenuFlyoutItem Text="Remove" Click="RemoveMenu_Click" />
                     </MenuFlyout>
                 </ListView.ContextFlyout>
 
@@ -222,7 +222,7 @@
                     <DataTemplate x:DataType="vm:MediaItemViewModel">
                         <Grid Padding="8,2">
                             <Border Style="{StaticResource CardBorderStyle}" Padding="12,10">
-                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12">
                                     <!-- The selection, inside the card where it is easy to see (the ListView's own box is off). -->
                                     <CheckBox
                                         Grid.Column="0"
@@ -240,31 +240,55 @@
                                             TextTrimming="CharacterEllipsis"
                                             ToolTipService.ToolTip="{x:Bind FullPath}" />
 
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,1">
+                                        <!-- Badge and status stay on the first line; a long detail wraps beside them (two lines at most, the rest on hover). -->
+                                        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
+                                            <Border
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="4"
+                                                Padding="6,1"
+                                                VerticalAlignment="Top">
                                                 <TextBlock Text="{x:Bind SourceBadge, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />
                                             </Border>
                                             <TextBlock
+                                                Grid.Column="1"
+                                                Margin="0,1,0,0"
                                                 Text="{x:Bind Status, Mode=OneWay}"
                                                 Style="{StaticResource CaptionTextBlockStyle}"
                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                VerticalAlignment="Center" />
+                                                VerticalAlignment="Top" />
                                             <TextBlock
+                                                Grid.Column="2"
+                                                Margin="0,1,0,0"
                                                 Text="{x:Bind Detail, Mode=OneWay}"
                                                 Style="{StaticResource MutedStyle}"
+                                                TextWrapping="Wrap"
                                                 TextTrimming="CharacterEllipsis"
-                                                MaxWidth="460"
-                                                VerticalAlignment="Center"
+                                                MaxLines="2"
+                                                VerticalAlignment="Top"
                                                 ToolTipService.ToolTip="{x:Bind DetailToolTip, Mode=OneWay}" />
-                                        </StackPanel>
+                                        </Grid>
 
-                                        <ProgressBar
-                                            Value="{x:Bind Progress, Mode=OneWay}"
-                                            Maximum="100"
-                                            Height="3"
+                                        <Grid
+                                            ColumnDefinitions="*,Auto"
+                                            ColumnSpacing="8"
                                             Margin="0,2,0,0"
-                                            IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
-                                            Visibility="{x:Bind ProgressVisibility, Mode=OneWay}" />
+                                            Visibility="{x:Bind ProgressVisibility, Mode=OneWay}">
+                                            <ProgressBar
+                                                Value="{x:Bind Progress, Mode=OneWay}"
+                                                Maximum="100"
+                                                Height="3"
+                                                VerticalAlignment="Center"
+                                                IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Text="{x:Bind ProgressText, Mode=OneWay}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                VerticalAlignment="Center"
+                                                MinWidth="32"
+                                                TextAlignment="Right"
+                                                AutomationProperties.Name="File progress" />
+                                        </Grid>
                                     </StackPanel>
 
                                     <CheckBox
@@ -275,8 +299,16 @@
                                         IsChecked="{x:Bind GenerateSubtitles, Mode=TwoWay}"
                                         ToolTipService.ToolTip="Transcribe this file's dialogue with the speech model when you press Censor. Off: use the subtitles it already has." />
 
-                                    <Button
+                                    <CheckBox
                                         Grid.Column="3"
+                                        MinWidth="0"
+                                        VerticalAlignment="Center"
+                                        Content="Extract subtitles"
+                                        IsChecked="{x:Bind ExtractSubtitles, Mode=TwoWay}"
+                                        ToolTipService.ToolTip="Read the subtitle track inside this video and use it to find words too. Nothing is written beside the video; a video without a subtitle track carries on without one." />
+
+                                    <Button
+                                        Grid.Column="4"
                                         Style="{StaticResource TransparentButtonStyle}"
                                         Click="Peek_Click"
                                         AutomationProperties.Name="{x:Bind HitText, Mode=OneWay}"
@@ -288,8 +320,26 @@
                                         </StackPanel>
                                     </Button>
 
+                                    <!-- Time spent on this file (counts while it runs, stays as the total once done) and, while running, the time left. -->
+                                    <StackPanel Grid.Column="5" VerticalAlignment="Center" Spacing="1">
+                                        <TextBlock
+                                            Text="{x:Bind ElapsedText, Mode=OneWay}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            HorizontalAlignment="Right"
+                                            ToolTipService.ToolTip="Time spent on this file"
+                                            AutomationProperties.Name="Time spent on this file" />
+                                        <TextBlock
+                                            Text="{x:Bind RemainingText, Mode=OneWay}"
+                                            Style="{StaticResource MutedStyle}"
+                                            HorizontalAlignment="Right"
+                                            Visibility="{x:Bind HasRemaining, Mode=OneWay}"
+                                            ToolTipService.ToolTip="Estimated time left for this file"
+                                            AutomationProperties.Name="Estimated time left for this file" />
+                                    </StackPanel>
+
                                     <FontIcon
-                                        Grid.Column="4"
+                                        Grid.Column="6"
                                         Glyph="{x:Bind ResultGlyph, Mode=OneWay}"
                                         Foreground="{x:Bind ResultBrush, Mode=OneWay}"
                                         FontSize="16"
@@ -319,13 +369,20 @@
         <!-- Footer -->
         <Grid Grid.Row="5" Margin="0,12,0,0" RowDefinitions="Auto,Auto">
             <ProgressBar Value="{x:Bind ViewModel.OverallProgress, Mode=OneWay}" Maximum="100" Height="3" />
-            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Margin="0,8,0,0">
                 <TextBlock
                     Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
                     Style="{StaticResource MutedStyle}"
                     TextTrimming="CharacterEllipsis" />
+                <!-- Every queued file together; finished, skipped and failed files count as done. -->
                 <TextBlock
                     Grid.Column="1"
+                    Text="{x:Bind ViewModel.OverallProgressText, Mode=OneWay}"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="12,0,0,0"
+                    AutomationProperties.Name="Overall progress" />
+                <TextBlock
+                    Grid.Column="2"
                     Text="{x:Bind ViewModel.ElapsedText, Mode=OneWay}"
                     Style="{StaticResource MutedStyle}"
                     Margin="12,0,0,0" />

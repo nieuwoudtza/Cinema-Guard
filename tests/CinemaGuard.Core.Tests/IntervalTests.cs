@@ -69,6 +69,32 @@ public class HitCollectorTests
     }
 
     [Fact]
+    public void AWholeSubtitleLineGetsTheSentencePadding()
+    {
+        // The subtitle shows the line early: the extra after-padding still covers the spoken word.
+        var cue = new Cue { StartSeconds = 10, EndSeconds = 11, Text = "Jesus." };
+        var options = Options(full: ["JESUS"]) with { LinePadBeforeMs = 250, LinePadAfterMs = 1000 };
+
+        var hit = Assert.Single(HitCollector.FromSubtitles([cue], SyncFit.Identity, options, []));
+
+        Assert.Equal(9.75, hit.Start, 3);
+        Assert.Equal(12, hit.End, 3);
+        Assert.True(hit.WholeCue);
+    }
+
+    [Fact]
+    public void TheSentencePaddingAlsoWidensTheModelsSentence()
+    {
+        var transcript = Transcript(9, 12, "jesus christ", (9.5, 9.8, "jesus"));
+        var options = Options(full: ["JESUS"]) with { LinePadBeforeMs = 500, LinePadAfterMs = 500 };
+
+        var hit = Assert.Single(HitCollector.FromTranscript(transcript, HitSource.English, options));
+
+        Assert.Equal(8.5, hit.Start, 3);
+        Assert.Equal(12.5, hit.End, 3);
+    }
+
+    [Fact]
     public void RangesMergeClampAndShift()
     {
         var hits = new List<Hit>

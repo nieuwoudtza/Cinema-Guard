@@ -46,20 +46,24 @@ Build and pack an update release:
 1. **Set up** on first launch. The Tools page has one button that installs FFmpeg and downloads the
    recommended Phonon pair. Defaults are already selected; there is nothing else to configure.
 2. **Add files** or drag videos onto the window. Folders ask whether to include subfolders.
-3. **Generate** means "transcribe this file". It starts ticked when the file has no subtitles,
-   unless "Always generate subtitles" is on.
-4. **Censor** runs the queue. One file at a time; one failure never stops the rest.
+3. **Generate subtitles** means "transcribe this file with the speech model"; **Extract subtitles**
+   means "use the subtitle track inside the video". New files start with whatever Settings → Files
+   says (Generate off, Extract on by default).
+4. **Censor** runs the queue. One file at a time; one failure never stops the rest. Files can be
+   added or removed while it runs.
 5. The hit count opens **Peek** (words, counts, exact times, and whether they came from the English
    model, the multilingual model, the subtitle file, or the source's own masking).
 
-Output is `<name><affix>.<mp4|mkv>` (default `Movie_CG.mp4`). Subtitles:
+Output is `<name><affix>.<mp4|mkv>` (default `Movie_CG.mp4`). Beside the video, only:
 
-- `Movie.srt` - the sidecar the app reads (yours, extracted, or downloaded).
-- `Movie.generated.srt` - cues made from the transcript.
-- `Movie.phonon-en.json`, `Movie.phonon-ml.json` - Phonon transcript caches (reused next time).
-- `Movie.transcript.json` - transcript cache for Whisper, Parakeet or your server.
-- `Movie.languages.json` - the foreign-dialogue report.
+- `Movie.srt` - the sidecar the app reads (yours, saved from the video, or downloaded).
 - `Movie_Full_CG.srt`, `Movie_Censored_CG.srt` - when not embedding.
+- `Movie.oneword.srt` - only with "Also write one-word subtitles".
+
+Transcripts, the generated subtitles and the foreign-dialogue report are kept in
+`%LOCALAPPDATA%\CinemaGuard\cache\<film>-<hash>\` so a re-run skips the speech model ("Keep
+transcripts for re-runs"; unused ones go after 30 days). Files an earlier version left beside the
+video are moved there.
 
 ## Speech models
 
@@ -110,7 +114,8 @@ status of everything; Settings holds overrides for every path.
    fitted to the transcript, which fixes downloads timed for 24.000 fps on a 23.976 fps film.
 5. Write masked subtitles and encode: mute the selected track at the hit ranges, copy the video,
    validate the result, then rename `.partial` to the final name.
-6. Only after validation: the Recycle Bin option applies, never a permanent delete.
+6. Only after validation: the originals are kept, sent to the Recycle Bin or deleted permanently,
+   as chosen in Settings (Keep is the default).
 
 Vocals-only mode splits the 5.1/7.1 track, analyses each dialogue channel separately, silences only
 the channels that carry the word, and joins the channels back in one encode.
