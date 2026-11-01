@@ -182,8 +182,10 @@ dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
 
 Keep the build and the tests green, and match the style of the code around the change.
 
+By submitting a pull request you agree to release your contribution under the project's license
+(MIT No Attribution).
+
 ## License
 
-[The Unlicense](LICENSE): this is free and unencumbered software released into the public domain.
-Use it, change it, sell it, ship it - no attribution required, no warranty given. The WaveBit name
-and logo are not part of that grant.
+[MIT No Attribution](LICENSE): use it, change it, sell it, ship it - no attribution required, no
+warranty given. The WaveBit name and logo are not part of that grant.
