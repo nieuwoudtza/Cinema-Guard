@@ -8,6 +8,13 @@
     mc:Ignorable="mc"
     Background="Transparent">
 
+    <Page.Resources>
+        <!-- The default 154 minimum leaves a gap after On/Off; without it the switch ends at the row's right edge like the other controls. -->
+        <Style TargetType="ToggleSwitch" BasedOn="{StaticResource DefaultToggleSwitchStyle}">
+            <Setter Property="MinWidth" Value="0" />
+        </Style>
+    </Page.Resources>
+
     <Grid Padding="24,14,24,0" RowDefinitions="Auto,*,Auto">
 
         <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
@@ -16,255 +23,260 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="8" Padding="0,0,4,20" MaxWidth="920" HorizontalAlignment="Left">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MaxWidth="{StaticResource PageContentMaxWidth}" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="8" Padding="0,0,4,20">
 
-                <!-- ============================ VIDEO -->
-                <TextBlock Text="VIDEO" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Container" Description="MP4 for compatibility. MKV is chosen automatically for TrueHD, DTS or Opus audio.">
-                            <ComboBox MinWidth="130" SelectedIndex="{x:Bind ViewModel.ContainerIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="MP4" />
-                                <ComboBoxItem Content="MKV" />
-                            </ComboBox>
+                    <!-- ============================ VIDEO -->
+                    <TextBlock Text="VIDEO" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Container" Description="MP4 for compatibility. MKV is chosen automatically for TrueHD, DTS or Opus audio.">
+                                <ComboBox MinWidth="130" SelectedIndex="{x:Bind ViewModel.ContainerIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="MP4" />
+                                    <ComboBoxItem Content="MKV" />
+                                </ComboBox>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="File name affix" Description="Added before the extension: Movie_CG.mp4">
+                                <TextBox Width="150" Text="{x:Bind ViewModel.S.CustomAffix, Mode=TwoWay}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Change the aspect ratio" Description="Tag the output with a display aspect ratio.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.AspectRatio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Aspect ratio" Description="Width : height">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectWidth, Mode=TwoWay}" />
+                                    <TextBlock Text=":" VerticalAlignment="Center" />
+                                    <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectHeight, Mode=TwoWay}" />
+                                </StackPanel>
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ SUBTITLES -->
+                    <TextBlock Text="SUBTITLES" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Create censored subtitles" Description="Write _Full and _Censored subtitle files, or embed them in the output.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.CreateSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Subtitle output" Description="Full keeps every line (masked); Censored keeps only lines with filtered words; Dual writes both.">
+                                <ComboBox MinWidth="150" SelectedIndex="{x:Bind ViewModel.SubtitleTypeIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="None" />
+                                    <ComboBoxItem Content="Full" />
+                                    <ComboBoxItem Content="Censored" />
+                                    <ComboBoxItem Content="Dual" />
+                                </ComboBox>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Embed in the video" Description="Embed the subtitle tracks instead of leaving .srt files next to the film.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.EmbedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Censor character" Description="One symbol, used to mask each letter of the word. A space leaves the word blank.">
+                                <TextBox Width="64" MaxLength="1" Text="{x:Bind ViewModel.S.CensorCharacter, Mode=TwoWay}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Retime subtitles to the transcript" Description="Fixes downloads timed for another frame rate (24.000 vs 23.976 is 6 seconds by the end of a film).">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.RetimeOutputSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Also write one-word subtitles" Description="Legacy .oneword.srt file with one word per cue.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.WriteOneWordSrt, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Splice foreign-language cues" Description="Write a .mixed.srt that uses the multilingual transcript where the English model heard no English.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.SpliceForeignCues, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep forced subtitles" Description="The video's forced track (the lines shown when characters speak another language) goes into the output too, masked like the others and flagged forced. An image track (PGS, VobSub) cannot be masked and is copied as it is; MP4 cannot hold one at all.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepForcedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep the other subtitle tracks" Description="Copy the video's other subtitle tracks (other languages, SDH) into the output unchanged. They are not censored. MP4 keeps only the text ones; MKV keeps all of them.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ FILTER -->
+                    <TextBlock Text="FILTER" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Words" Description="{x:Bind ViewModel.FilterSummary, Mode=OneWay}">
+                                <Button Content="Edit filter" Click="EditFilter_Click" />
+                            </controls:SettingRow>
+
+                            <!-- Extra silence added either side of each mute, in milliseconds. -->
+                            <controls:SettingRow
+                                Header="Extra mute: single word the speech model heard"
+                                Description="Words on the &quot;mute the word only&quot; list. The speech model knows when the word is said, so a little extra before and after covers the start and tail of the word. In milliseconds.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <NumberBox Header="Before" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadBefore, Mode=TwoWay}" />
+                                    <NumberBox Header="After" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadAfter, Mode=TwoWay}" />
+                                </StackPanel>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow
+                                Header="Extra mute: single word only the subtitles have"
+                                Description="Words on the &quot;mute the word only&quot; list that the speech model missed. The moment is guessed from where the word sits in the subtitle line, so allow more either side. In milliseconds.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadBefore, Mode=TwoWay}" />
+                                    <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadAfter, Mode=TwoWay}" />
+                                </StackPanel>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow
+                                Header="Extra mute: whole sentence"
+                                Description="Words on the &quot;mute the whole sentence&quot; list (such as Jesus): the subtitle line, or the speech model's sentence, is muted with this much extra either side. Raise After when subtitles appear before the line is spoken, Before when they appear late. In milliseconds.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadBefore, Mode=TwoWay}" />
+                                    <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadAfter, Mode=TwoWay}" />
+                                </StackPanel>
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ TRANSCRIPTION -->
+                    <TextBlock Text="TRANSCRIPTION" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Speech model" Description="{x:Bind ViewModel.SpeechSummary, Mode=OneWay}">
+                                <Button Content="Change…" Click="ChangeModel_Click" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Hotwords" Description="Names and terms the model tends to misspell, comma separated (max 25). Phonon and servers use them; Whisper takes them as a hint; Parakeet ignores them.">
+                                <TextBox Width="360" Text="{x:Bind ViewModel.S.PhononHotwords, Mode=TwoWay}" PlaceholderText="optional" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Subtitle reading speed" Description="Characters per second ceiling for generated cues (21 is standard).">
+                                <NumberBox Width="110" Minimum="8" Maximum="45" SmallChange="0.5" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.MaxCpsValue, Mode=TwoWay}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Audio downmix for transcription" Description="Weight the centre channel where dialogue lives.">
+                                <ComboBox MinWidth="160" SelectedIndex="{x:Bind ViewModel.DownmixIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Plain mono" />
+                                    <ComboBoxItem Content="Centre weighted" />
+                                </ComboBox>
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ PHONON ON THE GPU -->
+                    <TextBlock Text="PHONON ON THE GPU (DOCKER, OPTIONAL)" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Docker image" Description="Fermion's published CUDA image, used when Phonon's GPU switch on the Models page is on. Each Cinema Guard update brings the image it is tested with and offers the download; a newer or different image typed here stays. Leave it empty to go back to the recommended one.">
+                                <TextBox Width="360" Text="{x:Bind ViewModel.S.DockerImage, Mode=TwoWay}" PlaceholderText="{x:Bind ViewModel.RecommendedDockerImage}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Start Docker Desktop when needed" Description="Waits up to 90 seconds for Docker before falling back to the CPU.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.StartDockerDesktop, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Your own fermion.exe (advanced)" Description="Leave empty to use the Phonon engine from the Models page. A path here replaces it.">
+                                <TextBox Width="360" Text="{x:Bind ViewModel.S.LocalFermionPath, Mode=TwoWay}" PlaceholderText="optional" />
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ AUDIO -->
+                    <TextBlock Text="AUDIO" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Mute only the dialogue channels" Description="Vocals-only mode: rebuild the surround mix with the centre and bleed channels silenced where the words are.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.MuteVocalsOnly, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep the original audio" Description="Add the untouched track as a second audio stream.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOriginalAudio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep the other audio tracks" Description="Copy the video's other audio tracks (other languages, commentary, a second English mix) after the censored one, unchanged. They are not censored, and the censored track stays the default.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherAudioTracks, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep the source codec" Description="Re-encode the muted track with the source codec and bitrate instead of AAC. Dolby Atmos cannot be re-encoded, so the muted track loses it (7.1 TrueHD and E-AC3 become lossless FLAC). To keep Atmos as well, turn on Keep the original audio: that copy is untouched.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.ForceSameAudioEncoding, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ FILES -->
+                    <TextBlock Text="FILES" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Preferred language" Description="Used to pick the audio and subtitle track (ISO 639-2).">
+                                <ComboBox MinWidth="120" ItemsSource="{x:Bind ViewModel.Languages}" SelectedIndex="{x:Bind ViewModel.LanguageIndex, Mode=TwoWay}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Skip files with no filtered words" Description="Leaves the file alone instead of writing an identical copy.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.SkipMediaNoSwearing, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Skip files that look processed" Description="Ignores files whose name already ends with the affix.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.SkipAlreadyProcessed, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="After censoring, the originals" Description="Only after the output passed validation. Removes the video, its subtitle file and its saved transcripts. Delete permanently skips the Recycle Bin and cannot be undone.">
+                                <ComboBox MinWidth="200" SelectedIndex="{x:Bind ViewModel.OriginalsIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Keep" />
+                                    <ComboBoxItem Content="Send to the Recycle Bin" />
+                                    <ComboBoxItem Content="Delete permanently" />
+                                </ComboBox>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Generate subtitles for new files" Description="Ticks Generate subtitles on every file you add, so the speech model transcribes it. Most accurate, but it takes the longest. Off: you tick it per file.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.GenerateSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Extract subtitles for new files" Description="Ticks Extract subtitles on every file you add: the subtitle track inside the video is read and used to find words, together with the speech model. Nothing is written beside the video, and a file without a subtitle track simply carries on without one.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.ExtractSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Keep transcripts for re-runs" Description="Saves each file's transcript in Cinema Guard's own folder, never beside the video, so censoring it again skips the speech model. Unused transcripts are removed after 30 days. Off: they are removed as soon as the file is done.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepTranscripts, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Always re-decode" Description="Ignore the saved transcripts and transcribe again.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.AlwaysOverwriteSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ TOOLS -->
+                    <TextBlock Text="TOOLS" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="Installed tools" Description="FFmpeg, Docker, the Phonon engine and subloader status.">
+                                <Button Content="Open Tools" Click="OpenTools_Click" />
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ============================ COMMAND LINE -->
+                    <TextBlock Text="COMMAND LINE" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <controls:SettingRow Header="Command-line options" Description="Censor files from a script or another program without opening the window (-start), with a JSON report, progress lines and a cancel signal. Cinema Guard.exe --help prints the same list.">
+                            <Button Content="Show options" Click="CommandLine_Click" />
                         </controls:SettingRow>
+                    </Border>
 
-                        <controls:SettingRow Header="File name affix" Description="Added before the extension: Movie_CG.mp4">
-                            <TextBox Width="150" Text="{x:Bind ViewModel.S.CustomAffix, Mode=TwoWay}" />
+                    <!-- ============================ ABOUT: the one place the app's version is shown -->
+                    <TextBlock Text="ABOUT" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <controls:SettingRow Header="Cinema Guard" Description="Subtitles and profanity muting with Phonon 2.5. FFmpeg never re-encodes the video.">
+                            <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
                         </controls:SettingRow>
-
-                        <controls:SettingRow Header="Change the aspect ratio" Description="Tag the output with a display aspect ratio.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.AspectRatio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Aspect ratio" Description="Width : height">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectWidth, Mode=TwoWay}" />
-                                <TextBlock Text=":" VerticalAlignment="Center" />
-                                <NumberBox Width="92" Minimum="1" Maximum="100" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.AspectHeight, Mode=TwoWay}" />
-                            </StackPanel>
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ SUBTITLES -->
-                <TextBlock Text="SUBTITLES" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Create censored subtitles" Description="Write _Full and _Censored subtitle files, or embed them in the output.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.CreateSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Subtitle output" Description="Full keeps every line (masked); Censored keeps only lines with filtered words; Dual writes both.">
-                            <ComboBox MinWidth="150" SelectedIndex="{x:Bind ViewModel.SubtitleTypeIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="None" />
-                                <ComboBoxItem Content="Full" />
-                                <ComboBoxItem Content="Censored" />
-                                <ComboBoxItem Content="Dual" />
-                            </ComboBox>
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Embed in the video" Description="Embed the subtitle tracks instead of leaving .srt files next to the film.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.EmbedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Censor character" Description="One symbol, used to mask each letter of the word. A space leaves the word blank.">
-                            <TextBox Width="64" MaxLength="1" Text="{x:Bind ViewModel.S.CensorCharacter, Mode=TwoWay}" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Retime subtitles to the transcript" Description="Fixes downloads timed for another frame rate (24.000 vs 23.976 is 6 seconds by the end of a film).">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.RetimeOutputSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Also write one-word subtitles" Description="Legacy .oneword.srt file with one word per cue.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.WriteOneWordSrt, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Splice foreign-language cues" Description="Write a .mixed.srt that uses the multilingual transcript where the English model heard no English.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.SpliceForeignCues, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep forced subtitles" Description="The video's forced track (the lines shown when characters speak another language) goes into the output too, masked like the others and flagged forced. An image track (PGS, VobSub) cannot be masked and is copied as it is; MP4 cannot hold one at all.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepForcedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep the other subtitle tracks" Description="Copy the video's other subtitle tracks (other languages, SDH) into the output unchanged. They are not censored. MP4 keeps only the text ones; MKV keeps all of them.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ FILTER -->
-                <TextBlock Text="FILTER" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Words" Description="{x:Bind ViewModel.FilterSummary, Mode=OneWay}">
-                            <Button Content="Edit filter" Click="EditFilter_Click" />
-                        </controls:SettingRow>
-
-                        <!-- Extra silence added either side of each mute, in milliseconds. -->
-                        <controls:SettingRow
-                            Header="Extra mute: single word the speech model heard"
-                            Description="Words on the &quot;mute the word only&quot; list. The speech model knows when the word is said, so a little extra before and after covers the start and tail of the word. In milliseconds.">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadBefore, Mode=TwoWay}" />
-                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="2000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.WordPadAfter, Mode=TwoWay}" />
-                            </StackPanel>
-                        </controls:SettingRow>
-
-                        <controls:SettingRow
-                            Header="Extra mute: single word only the subtitles have"
-                            Description="Words on the &quot;mute the word only&quot; list that the speech model missed. The moment is guessed from where the word sits in the subtitle line, so allow more either side. In milliseconds.">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadBefore, Mode=TwoWay}" />
-                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.EstimatedPadAfter, Mode=TwoWay}" />
-                            </StackPanel>
-                        </controls:SettingRow>
-
-                        <controls:SettingRow
-                            Header="Extra mute: whole sentence"
-                            Description="Words on the &quot;mute the whole sentence&quot; list (such as Jesus): the subtitle line, or the speech model's sentence, is muted with this much extra either side. Raise After when subtitles appear before the line is spoken, Before when they appear late. In milliseconds.">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <NumberBox Header="Before" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadBefore, Mode=TwoWay}" />
-                                <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadAfter, Mode=TwoWay}" />
-                            </StackPanel>
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ TRANSCRIPTION -->
-                <TextBlock Text="TRANSCRIPTION" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Speech model" Description="{x:Bind ViewModel.SpeechSummary, Mode=OneWay}">
-                            <Button Content="Change…" Click="ChangeModel_Click" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Hotwords" Description="Names and terms the model tends to misspell, comma separated (max 25). Phonon and servers use them; Whisper takes them as a hint; Parakeet ignores them.">
-                            <TextBox Width="360" Text="{x:Bind ViewModel.S.PhononHotwords, Mode=TwoWay}" PlaceholderText="optional" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Subtitle reading speed" Description="Characters per second ceiling for generated cues (21 is standard).">
-                            <NumberBox Width="110" Minimum="8" Maximum="45" SmallChange="0.5" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.MaxCpsValue, Mode=TwoWay}" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Audio downmix for transcription" Description="Weight the centre channel where dialogue lives.">
-                            <ComboBox MinWidth="160" SelectedIndex="{x:Bind ViewModel.DownmixIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="Plain mono" />
-                                <ComboBoxItem Content="Centre weighted" />
-                            </ComboBox>
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ PHONON ON THE GPU -->
-                <TextBlock Text="PHONON ON THE GPU (DOCKER, OPTIONAL)" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Docker image" Description="Fermion's published CUDA image, used when Phonon's GPU switch on the Models page is on. Each Cinema Guard update brings the image it is tested with and offers the download; a newer or different image typed here stays. Leave it empty to go back to the recommended one.">
-                            <TextBox Width="360" Text="{x:Bind ViewModel.S.DockerImage, Mode=TwoWay}" PlaceholderText="{x:Bind ViewModel.RecommendedDockerImage}" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Start Docker Desktop when needed" Description="Waits up to 90 seconds for Docker before falling back to the CPU.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.StartDockerDesktop, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Your own fermion.exe (advanced)" Description="Leave empty to use the Phonon engine from the Models page. A path here replaces it.">
-                            <TextBox Width="360" Text="{x:Bind ViewModel.S.LocalFermionPath, Mode=TwoWay}" PlaceholderText="optional" />
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ AUDIO -->
-                <TextBlock Text="AUDIO" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Mute only the dialogue channels" Description="Vocals-only mode: rebuild the surround mix with the centre and bleed channels silenced where the words are.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.MuteVocalsOnly, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep the original audio" Description="Add the untouched track as a second audio stream.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOriginalAudio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep the other audio tracks" Description="Copy the video's other audio tracks (other languages, commentary, a second English mix) after the censored one, unchanged. They are not censored, and the censored track stays the default.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOtherAudioTracks, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep the source codec" Description="Re-encode the muted track with the source codec and bitrate instead of AAC. Dolby Atmos cannot be re-encoded, so the muted track loses it (7.1 TrueHD and E-AC3 become lossless FLAC). To keep Atmos as well, turn on Keep the original audio: that copy is untouched.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.ForceSameAudioEncoding, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ FILES -->
-                <TextBlock Text="FILES" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Preferred language" Description="Used to pick the audio and subtitle track (ISO 639-2).">
-                            <ComboBox MinWidth="120" ItemsSource="{x:Bind ViewModel.Languages}" SelectedIndex="{x:Bind ViewModel.LanguageIndex, Mode=TwoWay}" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Skip files with no filtered words" Description="Leaves the file alone instead of writing an identical copy.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.SkipMediaNoSwearing, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Skip files that look processed" Description="Ignores files whose name already ends with the affix.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.SkipAlreadyProcessed, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="After censoring, the originals" Description="Only after the output passed validation. Removes the video, its subtitle file and its saved transcripts. Delete permanently skips the Recycle Bin and cannot be undone.">
-                            <ComboBox MinWidth="200" SelectedIndex="{x:Bind ViewModel.OriginalsIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="Keep" />
-                                <ComboBoxItem Content="Send to the Recycle Bin" />
-                                <ComboBoxItem Content="Delete permanently" />
-                            </ComboBox>
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Generate subtitles for new files" Description="Ticks Generate subtitles on every file you add, so the speech model transcribes it. Most accurate, but it takes the longest. Off: you tick it per file.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.GenerateSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Extract subtitles for new files" Description="Ticks Extract subtitles on every file you add: the subtitle track inside the video is read and used to find words, together with the speech model. Nothing is written beside the video, and a file without a subtitle track simply carries on without one.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.ExtractSubtitlesForNewFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Keep transcripts for re-runs" Description="Saves each file's transcript in Cinema Guard's own folder, never beside the video, so censoring it again skips the speech model. Unused transcripts are removed after 30 days. Off: they are removed as soon as the file is done.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepTranscripts, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-
-                        <controls:SettingRow Header="Always re-decode" Description="Ignore the saved transcripts and transcribe again.">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.S.AlwaysOverwriteSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ TOOLS -->
-                <TextBlock Text="TOOLS" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="Installed tools" Description="FFmpeg, Docker, the Phonon engine and subloader status.">
-                            <Button Content="Open Tools" Click="OpenTools_Click" />
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <!-- ============================ COMMAND LINE -->
-                <TextBlock Text="COMMAND LINE" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <controls:SettingRow Header="Command-line options" Description="Censor files from a script or another program without opening the window (-start), with a JSON report, progress lines and a cancel signal. Cinema Guard.exe --help prints the same list.">
-                        <Button Content="Show options" Click="CommandLine_Click" />
-                    </controls:SettingRow>
-                </Border>
-
-                <!-- ============================ ABOUT: the one place the app's version is shown -->
-                <TextBlock Text="ABOUT" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <controls:SettingRow Header="Cinema Guard" Description="Subtitles and profanity muting with Phonon 2.5. FFmpeg never re-encodes the video.">
-                        <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
-                    </controls:SettingRow>
-                </Border>
-            </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
 
         <!-- Save bar -->

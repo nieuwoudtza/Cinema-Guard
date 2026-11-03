@@ -9,7 +9,7 @@
 
     <Grid Padding="24,14,24,0" RowDefinitions="Auto,*,Auto">
 
-        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,12">
+        <StackPanel Grid.Row="0" Spacing="2" Margin="0,0,0,10">
             <TextBlock Text="Filter" Style="{StaticResource PageTitleStyle}" />
             <TextBlock
                 Text="A family toggles every spelling of a word; the count beside it opens the family to turn single spellings on or off. Sentence words mute the whole line; single words mute only the word itself."
@@ -18,41 +18,47 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="16" Padding="0,0,0,16" MaxWidth="1100" HorizontalAlignment="Left">
+            <!-- Top so the cards end with their lists, not at the bottom of the window. -->
+            <Grid VerticalAlignment="Top">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MaxWidth="{StaticResource PageContentMaxWidth}" />
+                </Grid.ColumnDefinitions>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16" Padding="0,0,4,16">
 
-                <Border Style="{StaticResource CardBorderStyle}" Padding="16">
-                    <StackPanel Spacing="10">
-                        <TextBlock Text="Mute the whole sentence" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="Blasphemy and insults: the entire line is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
-                        <Button Content="Select all / none" Click="ToggleAllFull_Click" HorizontalAlignment="Left" />
-                        <StackPanel x:Name="FullWordsPanel" Spacing="0" />
-                        <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
-                        <TextBox
-                            x:Name="FullCustom"
-                            AcceptsReturn="True"
-                            Height="96"
-                            TextWrapping="Wrap"
-                            PlaceholderText="One per line"
-                            FontFamily="Consolas" />
-                    </StackPanel>
-                </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="16">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Mute the whole sentence" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="Blasphemy and insults: the entire line is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
+                            <Button Content="Select all / none" Click="ToggleAllFull_Click" HorizontalAlignment="Left" />
+                            <StackPanel x:Name="FullWordsPanel" Spacing="0" />
+                            <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
+                            <TextBox
+                                x:Name="FullCustom"
+                                AcceptsReturn="True"
+                                Height="96"
+                                TextWrapping="Wrap"
+                                PlaceholderText="One per line"
+                                FontFamily="Consolas" />
+                        </StackPanel>
+                    </Border>
 
-                <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16">
-                    <StackPanel Spacing="10">
-                        <TextBlock Text="Mute the word only" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="Everyday swearing: only the spoken word is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
-                        <Button Content="Select all / none" Click="ToggleAllSingle_Click" HorizontalAlignment="Left" />
-                        <StackPanel x:Name="SingleWordsPanel" Spacing="0" />
-                        <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
-                        <TextBox
-                            x:Name="SingleCustom"
-                            AcceptsReturn="True"
-                            Height="96"
-                            TextWrapping="Wrap"
-                            PlaceholderText="One per line, e.g. HOLY SHIT"
-                            FontFamily="Consolas" />
-                    </StackPanel>
-                </Border>
+                    <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="16">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Mute the word only" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="Everyday swearing: only the spoken word is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
+                            <Button Content="Select all / none" Click="ToggleAllSingle_Click" HorizontalAlignment="Left" />
+                            <StackPanel x:Name="SingleWordsPanel" Spacing="0" />
+                            <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
+                            <TextBox
+                                x:Name="SingleCustom"
+                                AcceptsReturn="True"
+                                Height="96"
+                                TextWrapping="Wrap"
+                                PlaceholderText="One per line, e.g. HOLY SHIT"
+                                FontFamily="Consolas" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Grid>
         </ScrollViewer>
 

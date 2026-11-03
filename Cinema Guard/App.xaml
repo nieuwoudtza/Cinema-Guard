@@ -14,6 +14,10 @@
             <converters:BoolToVisibilityConverter x:Key="InverseBoolToVisibility" Invert="True" />
             <converters:CountToVisibilityConverter x:Key="CountToVisibility" />
 
+            <!-- Every page's content column: MaxWidth on a star column, so pages fill it when there is room and
+                 stay left-aligned (MaxWidth on a stretched panel centers it; a Left panel shrinks to its content). -->
+            <x:Double x:Key="PageContentMaxWidth">920</x:Double>
+
             <Style x:Key="CardBorderStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />

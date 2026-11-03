@@ -21,186 +21,191 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="8" Padding="0,0,4,16" MaxWidth="920" HorizontalAlignment="Left">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MaxWidth="{StaticResource PageContentMaxWidth}" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="8" Padding="0,0,4,16">
 
-                <!-- First run: one button installs everything the app needs. -->
-                <Border
-                    Style="{StaticResource CardBorderStyle}"
-                    Padding="16,12"
-                    Visibility="{x:Bind ViewModel.ShowSetupCard, Mode=OneWay}">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <FontIcon
-                                Glyph="&#xE7BA;"
-                                FontSize="20"
-                                VerticalAlignment="Top"
-                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Set up Cinema Guard" FontWeight="SemiBold" FontSize="16" />
-                                <TextBlock
-                                    Text="One button downloads everything below. The recommended settings are already chosen, so there is nothing else to configure."
-                                    Style="{StaticResource MutedStyle}"
-                                    TextWrapping="Wrap" />
+                    <!-- First run: one button installs everything the app needs. -->
+                    <Border
+                        Style="{StaticResource CardBorderStyle}"
+                        Padding="16,12"
+                        Visibility="{x:Bind ViewModel.ShowSetupCard, Mode=OneWay}">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon
+                                    Glyph="&#xE7BA;"
+                                    FontSize="20"
+                                    VerticalAlignment="Top"
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Set up Cinema Guard" FontWeight="SemiBold" FontSize="16" />
+                                    <TextBlock
+                                        Text="One button downloads everything below. The recommended settings are already chosen, so there is nothing else to configure."
+                                        Style="{StaticResource MutedStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
+
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <FontIcon Glyph="&#xE714;" FontSize="14" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="1">
+                                    <TextBlock Text="FFmpeg" FontWeight="SemiBold" />
+                                    <TextBlock Text="Reads and writes the video. Required." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind ViewModel.FfmpegState, Mode=OneWay}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MutedStyle}" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <FontIcon Glyph="&#xE8D6;" FontSize="14" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="1">
+                                    <TextBlock Text="Speech model" FontWeight="SemiBold" />
+                                    <TextBlock
+                                        Text="Phonon 2.5 English + Phonon 2.5: the recommended pair, and it works on any PC."
+                                        Style="{StaticResource MutedStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind ViewModel.ModelState, Mode=OneWay}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MutedStyle}" />
+                            </Grid>
+
+                            <!-- Only when Docker runs on an NVIDIA PC and the image is missing. -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Visibility="{x:Bind ViewModel.GpuImageMissing, Mode=OneWay}">
+                                <FontIcon Glyph="&#xE7F4;" FontSize="14" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="1">
+                                    <TextBlock Text="GPU image for Docker" FontWeight="SemiBold" />
+                                    <TextBlock
+                                        Text="Lets Phonon run on your NVIDIA graphics card, many times faster than the CPU. Several GB, downloaded once."
+                                        Style="{StaticResource MutedStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind ViewModel.GpuImageState, Mode=OneWay}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MutedStyle}" />
+                            </Grid>
+
+                            <ProgressBar
+                                Value="{x:Bind ViewModel.SetupProgress, Mode=OneWay}"
+                                IsIndeterminate="{x:Bind ViewModel.SetupIndeterminate, Mode=OneWay}"
+                                Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
+
+                            <TextBlock
+                                Text="{x:Bind ViewModel.SetupStatus, Mode=OneWay}"
+                                Style="{StaticResource MutedStyle}"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Content="Set up Cinema Guard"
+                                    Click="Setup_Click"
+                                    IsEnabled="{x:Bind ViewModel.CanSetup, Mode=OneWay}" />
+                                <Button Content="Choose a different model" Click="Models_Click" />
+                            </StackPanel>
+
+                            <TextBlock
+                                Text="Already have FFmpeg 7.1 or newer on this PC? Cinema Guard uses it instead of downloading another copy."
+                                Style="{StaticResource MutedStyle}"
+                                TextWrapping="Wrap" />
                         </StackPanel>
+                    </Border>
 
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                            <FontIcon Glyph="&#xE714;" FontSize="14" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Spacing="1">
-                                <TextBlock Text="FFmpeg" FontWeight="SemiBold" />
-                                <TextBlock Text="Reads and writes the video. Required." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <TextBlock
-                                Grid.Column="2"
-                                Text="{x:Bind ViewModel.FfmpegState, Mode=OneWay}"
-                                VerticalAlignment="Center"
-                                Style="{StaticResource MutedStyle}" />
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                            <FontIcon Glyph="&#xE8D6;" FontSize="14" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Spacing="1">
-                                <TextBlock Text="Speech model" FontWeight="SemiBold" />
-                                <TextBlock
-                                    Text="Phonon 2.5 English + Phonon 2.5: the recommended pair, and it works on any PC."
-                                    Style="{StaticResource MutedStyle}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                            <TextBlock
-                                Grid.Column="2"
-                                Text="{x:Bind ViewModel.ModelState, Mode=OneWay}"
-                                VerticalAlignment="Center"
-                                Style="{StaticResource MutedStyle}" />
-                        </Grid>
-
-                        <!-- Only when Docker runs on an NVIDIA PC and the image is missing. -->
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Visibility="{x:Bind ViewModel.GpuImageMissing, Mode=OneWay}">
-                            <FontIcon Glyph="&#xE7F4;" FontSize="14" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Spacing="1">
-                                <TextBlock Text="GPU image for Docker" FontWeight="SemiBold" />
-                                <TextBlock
-                                    Text="Lets Phonon run on your NVIDIA graphics card, many times faster than the CPU. Several GB, downloaded once."
-                                    Style="{StaticResource MutedStyle}"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                            <TextBlock
-                                Grid.Column="2"
-                                Text="{x:Bind ViewModel.GpuImageState, Mode=OneWay}"
-                                VerticalAlignment="Center"
-                                Style="{StaticResource MutedStyle}" />
-                        </Grid>
-
-                        <ProgressBar
-                            Value="{x:Bind ViewModel.SetupProgress, Mode=OneWay}"
-                            IsIndeterminate="{x:Bind ViewModel.SetupIndeterminate, Mode=OneWay}"
-                            Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
-
-                        <TextBlock
-                            Text="{x:Bind ViewModel.SetupStatus, Mode=OneWay}"
-                            Style="{StaticResource MutedStyle}"
-                            TextWrapping="Wrap"
-                            Visibility="{x:Bind ViewModel.IsSettingUp, Mode=OneWay}" />
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button
-                                Style="{StaticResource AccentButtonStyle}"
-                                Content="Set up Cinema Guard"
-                                Click="Setup_Click"
-                                IsEnabled="{x:Bind ViewModel.CanSetup, Mode=OneWay}" />
-                            <Button Content="Choose a different model" Click="Models_Click" />
-                        </StackPanel>
-
-                        <TextBlock
-                            Text="Already have FFmpeg 7.1 or newer on this PC? Cinema Guard uses it instead of downloading another copy."
-                            Style="{StaticResource MutedStyle}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </Border>
-
-                <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <ItemsControl ItemsSource="{x:Bind ViewModel.Tools}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:ToolRow">
-                                    <Grid Padding="16,11" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
-                                        <!-- The spinner while this tool is checked, then its tick or cross in the same spot. -->
-                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                            <ProgressRing
-                                                Width="16"
-                                                Height="16"
-                                                IsActive="{x:Bind IsChecking, Mode=OneWay}" />
-                                            <FontIcon
-                                                Glyph="{x:Bind Glyph, Mode=OneWay}"
-                                                Foreground="{x:Bind Brush, Mode=OneWay}"
-                                                FontSize="16"
-                                                Visibility="{x:Bind ResultVisibility, Mode=OneWay}" />
+                    <TextBlock Text="INSTALLED" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{x:Bind ViewModel.Tools}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ToolRow">
+                                        <Grid Padding="16,11" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                                            <!-- The spinner while this tool is checked, then its tick or cross in the same spot. -->
+                                            <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                <ProgressRing
+                                                    Width="16"
+                                                    Height="16"
+                                                    IsActive="{x:Bind IsChecking, Mode=OneWay}" />
+                                                <FontIcon
+                                                    Glyph="{x:Bind Glyph, Mode=OneWay}"
+                                                    Foreground="{x:Bind Brush, Mode=OneWay}"
+                                                    FontSize="16"
+                                                    Visibility="{x:Bind ResultVisibility, Mode=OneWay}" />
+                                            </Grid>
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{x:Bind Name, Mode=OneWay}" FontWeight="SemiBold" />
+                                                <TextBlock
+                                                    Text="{x:Bind Location, Mode=OneWay}"
+                                                    Style="{StaticResource MutedStyle}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <ProgressBar
+                                                    Margin="0,4,0,0"
+                                                    Maximum="100"
+                                                    Value="{x:Bind Progress, Mode=OneWay}"
+                                                    IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
+                                                    Visibility="{x:Bind IsBusy, Mode=OneWay}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind Status, Mode=OneWay}" HorizontalAlignment="Right" />
+                                                <TextBlock Text="{x:Bind Version, Mode=OneWay}" Style="{StaticResource MutedStyle}" HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                            <Button
+                                                Grid.Column="3"
+                                                VerticalAlignment="Center"
+                                                Content="{x:Bind ActionText, Mode=OneWay}"
+                                                ToolTipService.ToolTip="{x:Bind ActionTip, Mode=OneWay}"
+                                                Visibility="{x:Bind HasAction, Mode=OneWay}"
+                                                Click="ToolAction_Click" />
                                         </Grid>
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="{x:Bind Name, Mode=OneWay}" FontWeight="SemiBold" />
-                                            <TextBlock
-                                                Text="{x:Bind Location, Mode=OneWay}"
-                                                Style="{StaticResource MutedStyle}"
-                                                TextTrimming="CharacterEllipsis" />
-                                            <ProgressBar
-                                                Margin="0,4,0,0"
-                                                Maximum="100"
-                                                Value="{x:Bind Progress, Mode=OneWay}"
-                                                IsIndeterminate="{x:Bind IsProgressIndeterminate, Mode=OneWay}"
-                                                Visibility="{x:Bind IsBusy, Mode=OneWay}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind Status, Mode=OneWay}" HorizontalAlignment="Right" />
-                                            <TextBlock Text="{x:Bind Version, Mode=OneWay}" Style="{StaticResource MutedStyle}" HorizontalAlignment="Right" />
-                                        </StackPanel>
-                                        <Button
-                                            Grid.Column="3"
-                                            VerticalAlignment="Center"
-                                            Content="{x:Bind ActionText, Mode=OneWay}"
-                                            ToolTipService.ToolTip="{x:Bind ActionTip, Mode=OneWay}"
-                                            Visibility="{x:Bind HasAction, Mode=OneWay}"
-                                            Click="ToolAction_Click" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
 
-                <Button
-                    Content="Check again"
-                    Click="Recheck_Click"
-                    HorizontalAlignment="Left"
-                    IsEnabled="{x:Bind ViewModel.CanCheck, Mode=OneWay}" />
+                    <Button
+                        Content="Check again"
+                        Click="Recheck_Click"
+                        HorizontalAlignment="Left"
+                        IsEnabled="{x:Bind ViewModel.CanCheck, Mode=OneWay}" />
 
-                <TextBlock Text="SHELL" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <controls:SettingRow Header="SendTo shortcut" Description="Right-click a video → Send to → Cinema Guard, exactly like the old app.">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Add" Click="AddShortcut_Click" />
-                                <Button Content="Remove" Click="RemoveShortcut_Click" />
-                            </StackPanel>
+                    <TextBlock Text="SHELL" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <controls:SettingRow Header="SendTo shortcut" Description="Right-click a video → Send to → Cinema Guard, exactly like the old app.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Add" Click="AddShortcut_Click" />
+                                    <Button Content="Remove" Click="RemoveShortcut_Click" />
+                                </StackPanel>
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="Log files" Description="Every command, warning and error is written here.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Open log folder" Click="OpenLogs_Click" />
+                                    <Button Content="Settings file" Click="OpenSettingsFile_Click" />
+                                </StackPanel>
+                            </controls:SettingRow>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="IMPORT" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <controls:SettingRow
+                            Header="Import from the old Cinema Guard"
+                            Description="Select the folder holding the old Cinema Guard.exe and cg.dat. The word lists and options are read through Windows PowerShell 5.1 and saved here.">
+                            <Button Content="Import…" Click="Import_Click" />
                         </controls:SettingRow>
-
-                        <controls:SettingRow Header="Log files" Description="Every command, warning and error is written here.">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Open log folder" Click="OpenLogs_Click" />
-                                <Button Content="Settings file" Click="OpenSettingsFile_Click" />
-                            </StackPanel>
-                        </controls:SettingRow>
-                    </StackPanel>
-                </Border>
-
-                <TextBlock Text="IMPORT" Style="{StaticResource SectionHeaderStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <controls:SettingRow
-                        Header="Import from the old Cinema Guard"
-                        Description="Select the folder holding the old Cinema Guard.exe and cg.dat. The word lists and options are read through Windows PowerShell 5.1 and saved here.">
-                        <Button Content="Import…" Click="Import_Click" />
-                    </controls:SettingRow>
-                </Border>
-            </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
 
         <InfoBar
