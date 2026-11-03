@@ -7,16 +7,17 @@
       2. checks the files WinUI and the speech engines need are really in the publish folder
       3. downloads the previous release from the feed, so Velopack can make small delta updates
       4. vpk pack: the installer, the portable zip and the packages
-      5. builds CinemaGuard-Setup.exe around Velopack's setup (folder choice, desktop shortcut)
-      6. with -IisWebConfig only: copies web.config into the release folder
+      5. removes every older package, so the release folder holds this version only
+      6. builds CinemaGuard-Setup.exe around Velopack's setup (folder choice, desktop shortcut)
+      7. with -IisWebConfig only: copies web.config into the release folder
 
-    Then upload the whole release folder to the IIS folder behind the feed URL.
+    Then replace the contents of the IIS folder behind the feed URL with the release folder.
 
-    Versions are dated: yyyy.MM.dd.<iteration>, the same numbers every build of the app gets. Each
-    build bumps the iteration in build-number.json (Directory.Build.targets): 2026.11.01.1, then
-    2026.11.01.2, ..., starting at 1 again the next day. A release takes the next number from that file
-    and writes it back, so the builds after it carry on from it. When the feed or the local release
-    folder already holds that number or a higher one today, the release moves past them. Normally no
+    Versions are dated: yyyy.MM.dd.<iteration>, where the iteration counts the day's releases: the first
+    release of a day is 2026.11.01.1, the next 2026.11.01.2, ..., starting at 1 again the next day. The
+    releases already made today are read from the feed, the local release folder and
+    -PreviousReleasePath, so the count carries on across machines. Development builds keep their own
+    count in build-number.json (Directory.Build.targets) and never move a release number. Normally no
     version is passed at all.
 
     Velopack only accepts 3-part SemVer versions, so the package itself is numbered year.MMdd.iteration
@@ -81,27 +82,6 @@ function PackageVersionOf([datetime]$date, [int]$iteration) {
     "{0}.{1}.{2}" -f $date.Year, ($date.Month * 100 + $date.Day), $iteration
 }
 
-# The build counter Directory.Build.targets bumps on every build of the app: { "date": "yyyy-MM-dd", "iteration": n }.
-$counterFile = Join-Path $root "build-number.json"
-
-function Read-BuildCounter {
-    if (-not (Test-Path $counterFile)) { return $null }
-
-    try {
-        $counter = Get-Content $counterFile -Raw | ConvertFrom-Json
-        return [pscustomobject]@{ Date = [string]$counter.date; Iteration = [int]$counter.iteration }
-    }
-    catch {
-        Write-Warning "Could not read $counterFile ($($_.Exception.Message)); counting from 1."
-        return $null
-    }
-}
-
-function Write-BuildCounter([datetime]$date, [int]$iteration) {
-    $json = "{`n  `"date`": `"$($date.ToString('yyyy-MM-dd'))`",`n  `"iteration`": $iteration`n}`n"
-    [IO.File]::WriteAllText($counterFile, $json)
-}
-
 # Every package version already released: the live feed, the local release folder, and the
 # -PreviousReleasePath folder. The feed being unreachable is only a warning (the site may not be up yet).
 function Get-ReleasedVersions {
@@ -150,17 +130,13 @@ if ($Version) {
 else {
     $date = (Get-Date).Date
 
-    # The next build number, as the next build of the app would get it.
-    $counter = Read-BuildCounter
-    $iteration = if ($counter -and $counter.Date -eq $date.ToString("yyyy-MM-dd")) { $counter.Iteration + 1 } else { 1 }
-
-    # Past anything already released today (from another machine, or a counter that was reset).
+    # The day's first release is 1; after that, one past the highest release made today.
+    $iteration = 1
     $prefix = "{0}.{1}." -f $date.Year, ($date.Month * 100 + $date.Day)
     $pattern = "^" + [regex]::Escape($prefix) + "(\d+)$"
     $today = @($released | Where-Object { $_ -match $pattern } | ForEach-Object { [int]($_ -replace $pattern, '$1') })
     if ($today.Count -gt 0) {
-        $highest = ($today | Measure-Object -Maximum).Maximum
-        if ($iteration -le $highest) { $iteration = $highest + 1 }
+        $iteration = ($today | Measure-Object -Maximum).Maximum + 1
     }
 }
 
@@ -181,19 +157,12 @@ if ($newest -and [version]$PackageVersion -le $newest) {
 
 Write-Host "Version $DisplayVersion (package $PackageVersion)" -ForegroundColor Green
 
-# The builds after this release carry on from its number (never back below what the counter had).
-if ($date -eq (Get-Date).Date) {
-    $counter = Read-BuildCounter
-    $counted = if ($counter -and $counter.Date -eq $date.ToString("yyyy-MM-dd")) { $counter.Iteration } else { 0 }
-    Write-BuildCounter $date ([Math]::Max($iteration, $counted))
-}
-
-# CgReleaseBuild: this version is final, so Directory.Build.targets does not bump the counter again.
-$versionArgs = @("-p:Version=$PackageVersion", "-p:InformationalVersion=$DisplayVersion", "-p:FileVersion=$FileVersion", "-p:CgReleaseBuild=true")
-
-$running = Get-Process -Name "Cinema Guard" -ErrorAction SilentlyContinue
+# Only a copy running from the publish folder locks it; the installed app (under Programs) does not.
+$publishPrefix = [IO.Path]::GetFullPath($PublishDir).TrimEnd("\") + "\"
+$running = Get-Process -Name "Cinema Guard" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($publishPrefix, [StringComparison]::OrdinalIgnoreCase) }
 if ($running) {
-    Fail "Cinema Guard is running. Close it first so the publish folder can be replaced."
+    Fail "Cinema Guard is running from $PublishDir. Close it first so the publish folder can be replaced."
 }
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { Fail "dotnet is not on PATH." }
@@ -203,6 +172,9 @@ if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
     if ($LASTEXITCODE -ne 0) { Fail "could not install vpk (dotnet tool install --global vpk)." }
     $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
 }
+
+# CgReleaseBuild: this version is final, so Directory.Build.targets neither stamps nor counts the build.
+$versionArgs = @("-p:Version=$PackageVersion", "-p:InformationalVersion=$DisplayVersion", "-p:FileVersion=$FileVersion", "-p:CgReleaseBuild=true")
 
 # ---------------------------------------------------------------- publish
 
@@ -305,6 +277,32 @@ if ($LASTEXITCODE -ne 0) { Fail "vpk pack returned $LASTEXITCODE." }
 $velopackSetup = Join-Path $ReleasesDir "WaveBit.CinemaGuard-win-Setup.exe"
 if (-not (Test-Path $velopackSetup)) { Fail "Velopack did not create WaveBit.CinemaGuard-win-Setup.exe." }
 
+# ---------------------------------------------------------------- prune
+
+Step "Keeping only $DisplayVersion in the release folder"
+
+# Only this version's full package and its delta stay: a client one release behind takes the delta,
+# any older one the full package. The indexes are rewritten too, so they list no file that is gone.
+$keep = @("WaveBit.CinemaGuard-$PackageVersion-full.nupkg", "WaveBit.CinemaGuard-$PackageVersion-delta.nupkg")
+$stale = @(Get-ChildItem $ReleasesDir -File | Where-Object {
+    ($_.Name -like "*.nupkg" -and $keep -notcontains $_.Name) -or $_.Name -like "*.incomplete"
+})
+foreach ($file in $stale) {
+    Remove-Item $file.FullName -Force
+    Write-Host "Removed $($file.Name)"
+}
+
+$index = Join-Path $ReleasesDir "releases.win.json"
+$assets = @((Get-Content $index -Raw | ConvertFrom-Json).Assets | Where-Object { $_.Version -eq $PackageVersion })
+if (-not ($assets | Where-Object { $_.Type -eq "Full" })) { Fail "releases.win.json does not list the $PackageVersion full package." }
+[IO.File]::WriteAllText($index, (ConvertTo-Json -InputObject @{ Assets = $assets } -Depth 5 -Compress))
+
+$legacyIndex = Join-Path $ReleasesDir "RELEASES"
+if (Test-Path $legacyIndex) {
+    $lines = @(Get-Content $legacyIndex | Where-Object { $_ -match ([regex]::Escape($keep[0]) + '\s') })
+    [IO.File]::WriteAllText($legacyIndex, (($lines -join "`n") + "`n"))
+}
+
 # ---------------------------------------------------------------- installer
 
 if (-not $NoInstaller) {
@@ -354,6 +352,7 @@ Write-Host "Upload everything in:" -ForegroundColor Cyan
 Write-Host "  $ReleasesDir"
 Write-Host "to the IIS folder that serves:"
 Write-Host "  $FeedUrl"
+Write-Host "and delete the older .nupkg files there; releases.win.json no longer lists them."
 Write-Host ""
 Write-Host "Users download CinemaGuard-Setup.exe once; after that the app updates itself."
 Write-Host "The version list is releases.win.json; do not rename it."

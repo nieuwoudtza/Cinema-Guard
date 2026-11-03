@@ -1,9 +1,10 @@
 <Project>
   <!--
-    Every build of the app gets the next dated version, the same form publish.ps1 releases:
+    Every development build of the app gets the next dated version, the same form publish.ps1 releases:
     yyyy.MM.dd.<n>, where n counts the builds of the day (2026.11.01.1, 2026.11.01.2, ...; 1 again the
-    next day). The count lives in build-number.json beside this file; publish.ps1 reads and writes the
-    same file, so a release continues the count and passes CgReleaseBuild=true to stop a second bump.
+    next day). The count lives in build-number.json beside this file. Releases are numbered apart, by
+    the releases of the day (publish.ps1); it passes CgReleaseBuild=true, so a release build is neither
+    stamped here nor counted.
 
     Velopack only takes 3-part versions, so Version (the package form) is year.MMdd.n; the app shows
     InformationalVersion, the dated form. Only the app project is numbered: CoreInfo reads the version
