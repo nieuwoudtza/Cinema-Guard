@@ -11,8 +11,8 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="{x:Bind Header, Mode=OneWay}" TextWrapping="Wrap" />
-            <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
+            <TextBlock x:Name="HeaderText" Text="{x:Bind Header, Mode=OneWay}" TextWrapping="Wrap" />
+            <TextBlock x:Name="DescriptionText" Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
         </StackPanel>
 
         <ContentPresenter

@@ -38,4 +38,11 @@ public sealed partial class SettingRow : UserControl
         get => GetValue(BodyProperty);
         set => SetValue(BodyProperty, value);
     }
+
+    /// <summary>Marks each search word in the header and description; no words clears the marks.</summary>
+    public void Highlight(string[] words)
+    {
+        SearchHighlight.Apply(HeaderText, words);
+        SearchHighlight.Apply(DescriptionText, words);
+    }
 }
