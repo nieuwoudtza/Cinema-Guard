@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea for something Cinema Guard should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search the [existing issues](https://github.com/nieuwoudtza/Cinema-Guard/issues) first.
+        If someone has already asked for it, give that issue a 👍 so it's easy to see what people want most.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem or the situation, not only the feature.
+      placeholder: I clean audiobooks for my kids, and ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you picture it working.
+    validations:
+      required: true

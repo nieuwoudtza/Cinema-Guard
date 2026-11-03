@@ -1,0 +1,93 @@
+name: Bug report
+description: Something failed, hung, crashed, or a word was missed or muted in the wrong place.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Cinema Guard is still in its early stages, and
+        clear reports are what make it stable.
+
+        **Please search the [existing issues](https://github.com/nieuwoudtza/Cinema-Guard/issues) first.**
+        If yours is already there, add your details to it instead of opening a new one.
+
+        One problem per report, please.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead? Include the exact error message if there was one.
+      placeholder: |
+        I added a film and clicked Censor. It stopped at "Transcribing 94%" and the row said ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you clicked, in order. Does it happen every time, or only with some files?
+      placeholder: |
+        1. Add "Movie.mkv"
+        2. Turn on Generate subtitles
+        3. Click Censor
+        4. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Cinema Guard version
+      description: Shown at the bottom of the Settings page, for example v2026.11.02.1.
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and graphics card
+      placeholder: Windows 11 24H2, NVIDIA RTX 5070 (driver 580.xx)
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Speech model
+      description: The model chosen on the Models page, and whether its GPU switch is on.
+      placeholder: Phonon pair on the CPU / Whisper large-v3-turbo on the GPU / ...
+
+  - type: textarea
+    id: file
+    attributes:
+      label: About the file
+      description: |
+        The container, video and audio codec and the audio channels (for example MKV, H.265, TrueHD 7.1).
+        If you have MediaInfo, its text view is perfect. Say where the subtitles came from: inside the
+        video, a file next to it, downloaded, or none.
+      placeholder: MP4, H.264, AAC 5.1, English subtitle file next to the video
+
+  - type: textarea
+    id: words
+    attributes:
+      label: Missed or wrongly muted words (if that's the problem)
+      description: The word and the time in the film where it happens, for example "F*** at 01:35:12 is still audible".
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log file
+      description: |
+        Press Win+R, paste `%LOCALAPPDATA%\CinemaGuard\logs` and press Enter. Attach the `cg-<date>.log` file
+        from the day it happened by dragging it into this box. It lists every command the app ran and every
+        error. File paths appear in it; edit them out if you'd rather not share them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag in a screenshot of the error or the queue row, if there is one.
