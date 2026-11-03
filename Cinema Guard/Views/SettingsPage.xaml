@@ -68,7 +68,7 @@
                             <ToggleSwitch IsOn="{x:Bind ViewModel.S.EmbedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                         </controls:SettingRow>
 
-                        <controls:SettingRow Header="Censor character" Description="One symbol, used to mask each letter of the word.">
+                        <controls:SettingRow Header="Censor character" Description="One symbol, used to mask each letter of the word. A space leaves the word blank.">
                             <TextBox Width="64" MaxLength="1" Text="{x:Bind ViewModel.S.CensorCharacter, Mode=TwoWay}" />
                         </controls:SettingRow>
 

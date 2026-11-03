@@ -80,7 +80,7 @@ public static class CensoredSubtitleWriter
 
         foreach (var cue in cues)
         {
-            var masked = Mask(cue.Text, entries, settings.CensorCharacter.Length > 0 ? settings.CensorCharacter[0] : '*', out var count);
+            var masked = Mask(cue.Text, entries, settings.MaskCharacter(), out var count);
             maskedWords += count;
 
             var fullCue = cue.Clone();

@@ -165,7 +165,7 @@ public sealed class AppSettings
     {
         CustomAffix = SanitiseAffix(CustomAffix);
 
-        if (string.IsNullOrWhiteSpace(CensorCharacter) || CensorCharacter.Length != 1 || char.IsLetterOrDigit(CensorCharacter[0]))
+        if (!IsValidCensorCharacter(CensorCharacter))
             CensorCharacter = "*";
 
         if (AspectRatioWidth is < 1 or > 100) AspectRatioWidth = 16;
@@ -209,6 +209,17 @@ public sealed class AppSettings
         }
     }
 
+    /// <summary>One symbol, or a space to leave the word blank. Letters, digits, tabs and line breaks are refused.</summary>
+    public static bool IsValidCensorCharacter(string? value) =>
+        value is { Length: 1 } && (value[0] == ' ' || !(char.IsLetterOrDigit(value[0]) || char.IsWhiteSpace(value[0]) || char.IsControl(value[0])));
+
+    /// <summary>
+    /// The character written over each letter. A space becomes a non-breaking space: a cue that was only the
+    /// word would otherwise be a blank line, which FFmpeg drops from the embedded track (see CensoredSubtitleWriter).
+    /// </summary>
+    public char MaskCharacter() =>
+        !IsValidCensorCharacter(CensorCharacter) ? '*' : CensorCharacter[0] == ' ' ? ' ' : CensorCharacter[0];
+
     public IReadOnlyList<string> Validate()
     {
         var problems = new List<string>();
@@ -216,8 +227,8 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(CustomAffix) || CustomAffix.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             problems.Add("The custom affix cannot be empty or contain invalid file name characters.");
 
-        if (CensorCharacter.Length != 1 || char.IsLetterOrDigit(CensorCharacter[0]))
-            problems.Add("The censor character must be a single symbol.");
+        if (!IsValidCensorCharacter(CensorCharacter))
+            problems.Add("The censor character must be a single symbol or a space.");
 
         if (WordsFull.Count == 0 && WordsSingle.Count == 0)
             problems.Add("The filter is empty: add at least one word.");

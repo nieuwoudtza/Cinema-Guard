@@ -630,7 +630,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         var leftOut = 0;
 
         var entries = settings.WordsFull.Concat(settings.WordsSingle).ToList();
-        var censor = settings.CensorCharacter.Length > 0 ? settings.CensorCharacter[0] : '*';
+        var censor = settings.MaskCharacter();
 
         foreach (var stream in probe.SubtitleStreams)
         {

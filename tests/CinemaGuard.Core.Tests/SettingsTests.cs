@@ -1,5 +1,6 @@
 using CinemaGuard.Core.Media;
 using CinemaGuard.Core.Settings;
+using CinemaGuard.Core.Subtitles;
 
 namespace CinemaGuard.Core.Tests;
 
@@ -66,6 +67,34 @@ public class SettingsTests
         Assert.Equal(45, settings.MaxCps);
         Assert.Equal(0, settings.EstimatedPadBeforeMs);
         Assert.Equal("eng", settings.PreferredLanguage);
+    }
+
+    [Theory]
+    [InlineData(" ", true)]
+    [InlineData("#", true)]
+    [InlineData("a", false)]
+    [InlineData("7", false)]
+    [InlineData("\t", false)]
+    [InlineData("\n", false)]
+    [InlineData("", false)]
+    [InlineData("**", false)]
+    public void ACensorCharacterIsOneSymbolOrASpace(string value, bool valid)
+    {
+        var settings = new AppSettings { CensorCharacter = value };
+        settings.Normalise();
+
+        Assert.Equal(valid, AppSettings.IsValidCensorCharacter(value));
+        Assert.Equal(valid ? value : "*", settings.CensorCharacter);
+    }
+
+    [Fact]
+    public void ASpaceMasksWithANonBreakingSpaceSoTheCueSurvives()
+    {
+        var settings = new AppSettings { CensorCharacter = " " };
+
+        Assert.Equal(' ', settings.MaskCharacter());
+        Assert.Equal("    .", CensoredSubtitleWriter.Mask("Shit.", ["SHIT"], settings.MaskCharacter(), out _));
+        Assert.Equal("WHAT THE     ", CensoredSubtitleWriter.Mask("WHAT THE HELL", ["HELL"], settings.MaskCharacter(), out _));
     }
 
     [Fact]
