@@ -287,14 +287,15 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                             audio.Ordinal,
                             audio.Stream.ChannelLayout!,
                             ChannelLayouts.ChannelsFor(audio.Stream.ChannelLayout!)!,
-                            perChannel);
+                            perChannel,
+                            settings.MuteFadeMs / 1000.0);
                     }
                 }
 
                 if (!vocals)
                 {
                     filterScript = work.File("mute.txt");
-                    MuteFilterWriter.Write(filterScript, audio.Ordinal, ranges);
+                    MuteFilterWriter.Write(filterScript, audio.Ordinal, ranges, settings.MuteFadeMs / 1000.0);
                 }
             }
             else

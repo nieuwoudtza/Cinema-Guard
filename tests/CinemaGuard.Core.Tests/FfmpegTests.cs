@@ -439,6 +439,46 @@ public class FilterScriptTests
     }
 
     [Fact]
+    public void FadesOutBeforeEachRangeAndBackInAfterIt()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "cg-mute-" + Guid.NewGuid().ToString("N") + ".txt");
+
+        try
+        {
+            MuteFilterWriter.Write(path, 0, [new TimeRange(0.01, 2), new TimeRange(3.5, 4.25)], 0.03);
+            var text = File.ReadAllText(path);
+
+            // Small frames first, so the level can move within a 30 ms fade.
+            Assert.StartsWith("[0:a:0]asetnsamples=n=256:p=0,volume=", text);
+            // The fade window never starts before the beginning of the file.
+            Assert.Contains("volume=enable='between(t,0.000,2.030)':volume='min(1,max(0,max((0.010-t-256/sample_rate)/0.030,(t-2.000)/0.030)))':eval=frame,", text);
+            Assert.Contains("volume=enable='between(t,3.470,4.280)':volume='min(1,max(0,max((3.500-t-256/sample_rate)/0.030,(t-4.250)/0.030)))':eval=frame[muted]", text);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void NoFadeKeepsTheHardMute()
+    {
+        var graph = VocalsGraphBuilder.Build(0, "stereo", ["FL", "FR"], new Dictionary<string, IReadOnlyList<TimeRange>> { ["FL"] = [new TimeRange(1, 2)] }, 0);
+
+        Assert.Contains("[FL]volume=enable='between(t,1.000,2.000)':volume=0[FLm]", graph);
+        Assert.DoesNotContain("asetnsamples", graph);
+    }
+
+    [Fact]
+    public void VocalsGraphFadesEachMutedChannel()
+    {
+        var graph = VocalsGraphBuilder.Build(0, "stereo", ["FL", "FR"], new Dictionary<string, IReadOnlyList<TimeRange>> { ["FL"] = [new TimeRange(1, 2)] }, 0.05);
+
+        Assert.Contains("[FL]asetnsamples=n=256:p=0,volume=enable='between(t,0.950,2.050)'", graph);
+        Assert.Contains("[FR]anull[FRm]", graph);
+    }
+
+    [Fact]
     public void VocalsGraphSplitsMutesAndJoins()
     {
         var channels = new[] { "FL", "FR", "FC", "LFE", "SL", "SR" };

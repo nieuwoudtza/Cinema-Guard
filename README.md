@@ -75,7 +75,7 @@ this repository.
 |---|---|
 | `Cinema Guard/` | WinUI 3 app (unpackaged, x64) |
 | `src/CinemaGuard.Core/` | All logic: subtitles, speech engines, FFmpeg, pipeline. No UI. |
-| `tests/CinemaGuard.Core.Tests/` | xUnit tests (217) |
+| `tests/CinemaGuard.Core.Tests/` | xUnit tests (220) |
 | `installer/CinemaGuard.Installer/` | `CinemaGuard-Setup.exe`: folder choice, desktop shortcut, then Velopack install |
 | `publish.ps1` | Builds a release for the WaveBit update server |
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
@@ -217,7 +217,8 @@ status of everything; Settings holds overrides for every path.
    subtitle file is then matched to the transcript word by word (shared phrases as anchors,
    Needleman–Wunsch between them), so a word only the subtitles have, such as a masked `f***` or a
    word the model heard as another, is muted between the spoken words either side of it.
-5. Write masked subtitles and encode: mute the selected track at the hit ranges, copy the video,
+5. Write masked subtitles and encode: mute the selected track at the hit ranges (fading out just before
+   each range and back in after it, 30 ms by default, so a mute never clicks), copy the video,
    validate the result, then rename `.partial` to the final name.
 6. Only after validation: the originals are kept, sent to the Recycle Bin or deleted permanently,
    as chosen in Settings (Keep is the default).

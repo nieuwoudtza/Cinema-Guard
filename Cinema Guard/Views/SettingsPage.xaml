@@ -165,6 +165,12 @@
                                     <NumberBox Header="After" Width="92" Minimum="0" Maximum="5000" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.LinePadAfter, Mode=TwoWay}" />
                                 </StackPanel>
                             </controls:SettingRow>
+
+                            <controls:SettingRow
+                                Header="Fade in and out"
+                                Description="How long the sound takes to fade to silence before each mute and back after it, so a mute never clicks. The muted stretch itself stays silent. 0 cuts straight to silence. In milliseconds.">
+                                <NumberBox Width="92" Minimum="0" Maximum="500" SpinButtonPlacementMode="Hidden" Value="{x:Bind ViewModel.MuteFade, Mode=TwoWay}" />
+                            </controls:SettingRow>
                         </StackPanel>
                     </Border>
 

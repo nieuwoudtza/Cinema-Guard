@@ -56,6 +56,12 @@ public sealed class AppSettings
     public int LinePadBeforeMs { get; set; } = 250;
     public int LinePadAfterMs { get; set; } = 500;
 
+    /// <summary>
+    /// How long the sound fades to silence before each mute and back after it, so a mute never clicks.
+    /// 0 cuts straight to silence. The fade sits outside the mute: the muted stretch itself stays silent.
+    /// </summary>
+    public int MuteFadeMs { get; set; } = 30;
+
     // Transcription
     public PhononRuntimeMode PhononRuntime { get; set; } = PhononRuntimeMode.Auto;
 
@@ -177,6 +183,7 @@ public sealed class AppSettings
         WordPadAfterMs = Math.Clamp(WordPadAfterMs, 0, 2000);
         LinePadBeforeMs = Math.Clamp(LinePadBeforeMs, 0, 5000);
         LinePadAfterMs = Math.Clamp(LinePadAfterMs, 0, 5000);
+        MuteFadeMs = Math.Clamp(MuteFadeMs, 0, 500);
         MaxCps = Math.Clamp(MaxCps, 8, 45);
 
         WordsFull = CleanWords(WordsFull);

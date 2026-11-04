@@ -56,6 +56,7 @@ public class SettingsTests
             WordsFull = [" fuck ", "FUCK", ""],
             MaxCps = 1000,
             EstimatedPadBeforeMs = -5,
+            MuteFadeMs = 9000,
             PreferredLanguage = "Detect",
         };
 
@@ -66,6 +67,7 @@ public class SettingsTests
         Assert.Equal(["FUCK"], settings.WordsFull);
         Assert.Equal(45, settings.MaxCps);
         Assert.Equal(0, settings.EstimatedPadBeforeMs);
+        Assert.Equal(500, settings.MuteFadeMs);
         Assert.Equal("eng", settings.PreferredLanguage);
     }
 

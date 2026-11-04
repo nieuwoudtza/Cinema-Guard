@@ -148,6 +148,12 @@ public sealed partial class SettingsViewModel(SettingsService service, SpeechSer
         set { S.LinePadAfterMs = (int)Math.Round(value); OnPropertyChanged(); }
     }
 
+    public double MuteFade
+    {
+        get => S.MuteFadeMs;
+        set { S.MuteFadeMs = (int)Math.Round(value); OnPropertyChanged(); }
+    }
+
     public (bool Ok, string Message) Save()
     {
         var problems = S.Validate();

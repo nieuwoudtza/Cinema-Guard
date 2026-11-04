@@ -11,26 +11,66 @@ namespace CinemaGuard.Core.Ffmpeg;
 /// </summary>
 public static class MuteFilterWriter
 {
-    public static void Write(string path, int audioOrdinal, IReadOnlyList<TimeRange> ranges)
+    /// <summary>
+    /// Audio is cut into frames this many samples long before a fade, because the volume filter works out its
+    /// level once per frame: a decoder's frame (often 1024 samples, 21 ms) would turn a short fade into one step.
+    /// </summary>
+    internal const int FadeFrameSamples = 256;
+
+    public static void Write(string path, int audioOrdinal, IReadOnlyList<TimeRange> ranges, double fadeSeconds = 0)
     {
         if (ranges.Count == 0) throw new ArgumentException("At least one range is required.", nameof(ranges));
 
         var builder = new StringBuilder();
         builder.Append($"[0:a:{audioOrdinal}]");
-
-        foreach (var range in ranges)
-        {
-            builder.Append("volume=enable='between(t,")
-                .Append(Format(range.Start))
-                .Append(',')
-                .Append(Format(range.End))
-                .Append(")':volume=0,");
-        }
-
+        AppendMutes(builder, ranges, fadeSeconds);
         builder.Length--; // trailing comma
         builder.Append("[muted]");
 
         File.WriteAllText(path, builder.ToString());
+    }
+
+    /// <summary>
+    /// One volume filter per range, each followed by a comma. With a fade, the level falls from full to silent over
+    /// the fade before the range and rises again over the fade after it; the range itself stays silent. The level is
+    /// set per frame, so the fade out is timed by where a frame ends and the fade in by where it starts: no frame that
+    /// reaches into the range is heard. A frame is <see cref="FadeFrameSamples"/> long (the volume filter's own
+    /// nb_samples is not set when the level is worked out, so it cannot be used).
+    /// </summary>
+    internal static void AppendMutes(StringBuilder builder, IReadOnlyList<TimeRange> ranges, double fadeSeconds)
+    {
+        if (fadeSeconds <= 0)
+        {
+            foreach (var range in ranges)
+            {
+                builder.Append("volume=enable='between(t,")
+                    .Append(Format(range.Start))
+                    .Append(',')
+                    .Append(Format(range.End))
+                    .Append(")':volume=0,");
+            }
+
+            return;
+        }
+
+        var fade = Format(fadeSeconds);
+        builder.Append("asetnsamples=n=").Append(FadeFrameSamples).Append(":p=0,");
+
+        foreach (var range in ranges)
+        {
+            var start = Format(range.Start);
+            var end = Format(range.End);
+
+            builder.Append("volume=enable='between(t,")
+                .Append(Format(Math.Max(0, range.Start - fadeSeconds)))
+                .Append(',')
+                .Append(Format(range.End + fadeSeconds))
+                .Append(")':volume='min(1,max(0,max((")
+                .Append(start).Append("-t-").Append(FadeFrameSamples).Append("/sample_rate)/").Append(fade)
+                .Append(",(t-")
+                .Append(end).Append(")/").Append(fade)
+                .Append(")))':eval=frame,");
+        }
     }
 
     internal static string Format(double seconds) => seconds.ToString("0.000", CultureInfo.InvariantCulture);
@@ -46,7 +86,8 @@ public static class VocalsGraphBuilder
         int audioOrdinal,
         string channelLayout,
         IReadOnlyList<string> channels,
-        IReadOnlyDictionary<string, IReadOnlyList<TimeRange>> rangesByChannel)
+        IReadOnlyDictionary<string, IReadOnlyList<TimeRange>> rangesByChannel,
+        double fadeSeconds = 0)
     {
         if (channels.Count == 0) throw new ArgumentException("A channel layout is required.", nameof(channels));
 
@@ -63,16 +104,7 @@ public static class VocalsGraphBuilder
             if (rangesByChannel.TryGetValue(channel, out var ranges) && ranges.Count > 0)
             {
                 builder.Append($"[{channel}]");
-
-                foreach (var range in ranges)
-                {
-                    builder.Append("volume=enable='between(t,")
-                        .Append(MuteFilterWriter.Format(range.Start))
-                        .Append(',')
-                        .Append(MuteFilterWriter.Format(range.End))
-                        .Append(")':volume=0,");
-                }
-
+                MuteFilterWriter.AppendMutes(builder, ranges, fadeSeconds);
                 builder.Length--;
                 builder.Append($"[{output}];");
             }
@@ -92,8 +124,8 @@ public static class VocalsGraphBuilder
     }
 
     public static void Write(string path, int audioOrdinal, string channelLayout, IReadOnlyList<string> channels,
-        IReadOnlyDictionary<string, IReadOnlyList<TimeRange>> rangesByChannel) =>
-        File.WriteAllText(path, Build(audioOrdinal, channelLayout, channels, rangesByChannel));
+        IReadOnlyDictionary<string, IReadOnlyList<TimeRange>> rangesByChannel, double fadeSeconds = 0) =>
+        File.WriteAllText(path, Build(audioOrdinal, channelLayout, channels, rangesByChannel, fadeSeconds));
 }
 
 /// <summary>Reads `-progress pipe:1` output.</summary>
