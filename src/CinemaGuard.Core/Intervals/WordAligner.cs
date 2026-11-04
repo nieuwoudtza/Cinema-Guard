@@ -133,7 +133,7 @@ public sealed class WordAlignment
 /// reverse it; Needleman–Wunsch matches the words between anchors; a small Levenshtein allowance absorbs
 /// spelling. It follows the subtitles through cuts and local jumps a single straight line cannot. A subtitle
 /// word the model did not hear (a masked f***, or "film" for "fucking") is then timed between the matched
-/// words either side of it.
+/// words either side of it. The matching is ported from Petrus Vermaak's SRT Mapper (v10.22).
 /// </summary>
 public static class WordAligner
 {

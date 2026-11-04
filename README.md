@@ -226,8 +226,9 @@ status of everything; Settings holds overrides for every path.
 4. Filter hits: words from the transcript(s) plus the subtitle file. Subtitle timings are first
    fitted to the transcript, which fixes downloads timed for 24.000 fps on a 23.976 fps film. The
    subtitle file is then matched to the transcript word by word (shared phrases as anchors,
-   Needleman–Wunsch between them), so a word only the subtitles have, such as a masked `f***` or a
-   word the model heard as another, is muted between the spoken words either side of it.
+   Needleman–Wunsch between them, ported from Petrus Vermaak's SRT Mapper), so a word only the
+   subtitles have, such as a masked `f***` or a word the model heard as another, is muted between the
+   spoken words either side of it.
 5. Write masked subtitles and encode: mute the selected track at the hit ranges (fading out just before
    each range and back in after it, 30 ms by default, so a mute never clicks), copy the video,
    validate the result, then rename `.partial` to the final name.
@@ -283,6 +284,12 @@ Keep the build and the tests green, and match the style of the code around the c
 
 By submitting a pull request you agree to release your contribution under the project's license
 (MIT No Attribution).
+
+## Credits
+
+- **Petrus Vermaak**: the word-by-word matching of subtitles to the speech model is ported from his
+  SRT Mapper, and combining the subtitle file with what the speech model heard was his suggestion.
+  He also tests Cinema Guard on his own films.
 
 ## License
 
