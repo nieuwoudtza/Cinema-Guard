@@ -1,6 +1,9 @@
 #requires -Version 5.1
 <#
-    Packs the browser extension for the Chrome Web Store: publish\extension\cinema-guard-<version>.zip.
+    Packs the browser extension for the Chrome Web Store: deploy\chrome-web-store\cinema-guard-<version>.zip.
+
+    The zip lands beside the store listing, its description and images, so the folder holds everything the developer
+    dashboard asks for. Older zips are removed: only the version being uploaded stays.
 
     The version comes from extension\manifest.json; raise it there before each upload (the store refuses a version it
     already has). The zip holds the extension folder without its README. Entries are written with forward slashes:
@@ -14,11 +17,11 @@ Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
 $source = Join-Path $PSScriptRoot 'extension'
 $manifest = Get-Content (Join-Path $source 'manifest.json') -Raw | ConvertFrom-Json
-$outputFolder = Join-Path $PSScriptRoot 'publish\extension'
+$outputFolder = Join-Path $PSScriptRoot 'deploy\chrome-web-store'
 $zipPath = Join-Path $outputFolder "cinema-guard-$($manifest.version).zip"
 
 New-Item -ItemType Directory -Force -Path $outputFolder | Out-Null
-if (Test-Path $zipPath) { Remove-Item $zipPath }
+Get-ChildItem $outputFolder -Filter 'cinema-guard-*.zip' | Remove-Item
 
 $excluded = @('README.md')
 $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)

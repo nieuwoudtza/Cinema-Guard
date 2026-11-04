@@ -1,6 +1,7 @@
 # Chrome Web Store listing: Cinema Guard
 
-Everything the developer dashboard asks for, ready to paste. Images are in this folder.
+Everything the developer dashboard asks for, ready to paste. Images are in `images/`; the package to upload,
+`cinema-guard-<version>.zip`, is written beside this file by `publish-extension.ps1`.
 
 ## Store listing tab
 
@@ -48,10 +49,10 @@ Everything the developer dashboard asks for, ready to paste. Images are in this 
 
 | Field | File |
 |---|---|
-| Store icon (128 × 128, 96 × 96 artwork with transparent padding) | `store-icon-128.png` |
-| Screenshots (1280 × 800, 24-bit PNG) | `screenshot-1-popup.png` … `screenshot-5-sites.png`, in that order |
-| Small promo tile (440 × 280) | `promo-small-440x280.png` |
-| Marquee promo tile (1400 × 560) | `promo-marquee-1400x560.png` |
+| Store icon (128 × 128, 96 × 96 artwork with transparent padding) | `images/store-icon-128.png` |
+| Screenshots (1280 × 800, 24-bit PNG) | `images/screenshot-1-popup.png` … `images/screenshot-5-sites.png`, in that order |
+| Small promo tile (440 × 280) | `images/promo-small-440x280.png` |
+| Marquee promo tile (1400 × 560) | `images/promo-marquee-1400x560.png` |
 
 The description is in `description.txt` as plain text, ready to paste.
 

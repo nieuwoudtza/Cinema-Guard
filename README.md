@@ -83,14 +83,28 @@ this repository.
 | `src/CinemaGuard.Core/` | All logic: subtitles, speech engines, FFmpeg, pipeline. No UI. |
 | `tests/CinemaGuard.Core.Tests/` | xUnit tests (220) |
 | `installer/CinemaGuard.Installer/` | `CinemaGuard-Setup.exe`: folder choice, desktop shortcut, then Velopack install |
-| `publish.ps1` | Builds a release for the WaveBit update server |
-| `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
 | `Cinema Guard/tools/Import-CgDat.ps1` | Reads the old app's `cg.dat` (Windows PowerShell 5.1) |
 | `extension/` | The browser extension (Manifest V3); see [extension/README.md](extension/README.md) |
 | `tests/extension/` | Node tests for the extension's matching, caption parsing and mute timing (`node --test "tests/extension/*.test.mjs"`) |
-| `publish-extension.ps1` | Packs the extension for the Chrome Web Store into `publish\extension\` |
-| `store/chrome-web-store/` | The store listing text, privacy answers, screenshots and promo tile |
 | `userscript/` | The Tampermonkey userscript the extension grew out of (YouTube only, superseded by the extension) |
+| `publish.ps1` | Builds a desktop release into `deploy/desktop/` |
+| `publish-extension.ps1` | Packs the extension into `deploy/chrome-web-store/` |
+| `deploy/` | Everything that ships, one folder per destination (below) |
+
+What the scripts write is git-ignored; the rest of `deploy/` is kept in the repository:
+
+```
+deploy/
+  desktop/
+    web.config          IIS settings for a standalone feed folder; publish.ps1 -IisWebConfig
+    publish/            dotnet publish output, the input to vpk pack (ignored)
+    feed/               the release: upload it to https://wavebit.dev/software/cinemaguard (ignored)
+  chrome-web-store/
+    listing.md          every field the developer dashboard asks for, privacy answers included
+    description.txt     the description as plain text
+    images/             store icon, screenshots, promo tiles
+    cinema-guard-<version>.zip   the package to upload (ignored)
+```
 
 ### Build and run
 
@@ -251,8 +265,8 @@ the channels that carry the word, and joins the channels back in one encode.
 Installed copies update themselves with [Velopack](https://velopack.io/) from
 `https://wavebit.dev/software/cinemaguard`. The feed is a plain folder outside the site's `wwwroot`,
 served by the wavebit.dev MVC app with `UseStaticFiles` (`.nupkg` mapped to
-`application/octet-stream`); upload everything `publish.ps1` writes. `releases.win.json` is the
-version list. Only a standalone IIS site or virtual directory needs `deploy/web.config`
+`application/octet-stream`); upload everything `publish.ps1` writes to `deploy/desktop/feed/`.
+`releases.win.json` is the version list. Only a standalone IIS site or virtual directory needs `deploy/desktop/web.config`
 (`publish.ps1 -IisWebConfig`). `CINEMAGUARD_UPDATE_FEED` points a test install at another folder or
 staging URL.
 

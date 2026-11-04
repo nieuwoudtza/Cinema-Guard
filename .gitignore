@@ -361,5 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# What the publish scripts write: the desktop build and update feed, and the Chrome Web Store zip. The rest of deploy\
+# (web.config, the store listing and its images) is kept.
+deploy/desktop/*/
+deploy/chrome-web-store/*.zip
 # The per-build version counter (Directory.Build.targets, publish.ps1); each machine keeps its own.
 build-number.json

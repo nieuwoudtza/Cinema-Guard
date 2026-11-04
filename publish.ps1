@@ -11,7 +11,8 @@
       6. builds CinemaGuard-Setup.exe around Velopack's setup (folder choice, desktop shortcut)
       7. with -IisWebConfig only: copies web.config into the release folder
 
-    Then replace the contents of the IIS folder behind the feed URL with the release folder.
+    Then replace the contents of the IIS folder behind the feed URL with the release folder, deploy\desktop\feed.
+    The publish folder, deploy\desktop\publish, is only the input to vpk pack.
 
     Versions are dated: yyyy.MM.dd.<iteration>, where the iteration counts the day's releases: the first
     release of a day is 2026.11.01.1, the next 2026.11.01.2, ..., starting at 1 again the next day. The
@@ -53,15 +54,15 @@ param(
     # Skip the small custom setup window and ship Velopack's own setup only.
     [switch]$NoInstaller,
 
-    # Add deploy\web.config: only for a standalone IIS site or virtual directory. The wavebit.dev MVC
+    # Add deploy\desktop\web.config: only for a standalone IIS site or virtual directory. The wavebit.dev MVC
     # app serves the folder with UseStaticFiles, where a web.config would just be a public file.
     [switch]$IisWebConfig
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-if (-not $PublishDir) { $PublishDir = Join-Path $root "artifacts\publish" }
-if (-not $ReleasesDir) { $ReleasesDir = Join-Path $root "artifacts\releases" }
+if (-not $PublishDir) { $PublishDir = Join-Path $root "deploy\desktop\publish" }
+if (-not $ReleasesDir) { $ReleasesDir = Join-Path $root "deploy\desktop\feed" }
 if (-not $Icon) {
     $candidate = Join-Path $root "Cinema Guard\Assets\AppIcon.ico"
     if (Test-Path $candidate) { $Icon = $candidate }
@@ -329,8 +330,8 @@ $releaseWebConfig = Join-Path $ReleasesDir "web.config"
 if ($IisWebConfig) {
     Step "Adding the IIS web.config"
 
-    $webConfig = Join-Path $root "deploy\web.config"
-    if (-not (Test-Path $webConfig)) { Fail "deploy\web.config is missing." }
+    $webConfig = Join-Path $root "deploy\desktop\web.config"
+    if (-not (Test-Path $webConfig)) { Fail "deploy\desktop\web.config is missing." }
     Copy-Item $webConfig $releaseWebConfig -Force
 }
 elseif (Test-Path $releaseWebConfig) {
