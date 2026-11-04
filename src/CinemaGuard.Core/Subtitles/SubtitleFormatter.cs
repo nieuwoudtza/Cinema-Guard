@@ -18,11 +18,18 @@ public static partial class SubtitleFormatter
     public static string NormaliseSpace(string value) =>
         value.Replace('\u00A0', ' ').Replace('\u200B', ' ').Replace('\uFEFF', ' ');
 
-    public static string FormatLine(string line)
+    public static string FormatLine(string line) => FormatLine(line, keepMasks: false);
+
+    /// <param name="keepMasks">
+    /// Keep the masking characters (f***) and turn [bleep] markers into a masked word, so the text still
+    /// shows where a censored word was spoken.
+    /// </param>
+    public static string FormatLine(string line, bool keepMasks)
     {
         if (string.IsNullOrEmpty(line)) return string.Empty;
 
         var value = NormaliseSpace(line);
+        if (keepMasks) value = SwearMatcher.MarkBleeps(value);
         value = TagRegex.Replace(value, string.Empty);
         value = BraceRegex.Replace(value, string.Empty);
         value = BracketRegex.Replace(value, string.Empty);
@@ -39,14 +46,14 @@ public static partial class SubtitleFormatter
         var builder = new StringBuilder(value.Length);
         foreach (var character in value)
         {
-            if (IsAllowed(character)) builder.Append(character);
+            if (IsAllowed(character) || keepMasks && character is '*' or '#' or '@') builder.Append(character);
         }
 
         return WhitespaceRegex.Replace(builder.ToString(), " ").Trim();
     }
 
-    public static string FormatCue(string text) =>
-        string.Join(" ", text.Replace("\r\n", "\n").Split('\n').Select(FormatLine)).Trim();
+    public static string FormatCue(string text, bool keepMasks = false) =>
+        string.Join(" ", text.Replace("\r\n", "\n").Split('\n').Select(line => FormatLine(line, keepMasks))).Trim();
 
     public static List<string> FormatLines(IEnumerable<string> lines) => lines.Select(FormatLine).ToList();
 

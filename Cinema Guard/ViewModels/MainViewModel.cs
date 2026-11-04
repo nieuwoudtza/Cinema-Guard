@@ -675,6 +675,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             var subtitle = $"{Plural(set.Hits.Count, "hit")} · {Plural(set.Ranges.Count, "mute range")}";
             if (set.Fit.Accepted) subtitle += $" · subtitles retimed ({(set.Fit.Slope - 1) * 100:+0.0;-0.0} %, {set.Fit.Intercept:+0.00;-0.00} s)";
+            if (set.Alignment is { } alignment) subtitle += $" · {alignment.MatchedShare * 100:0} % of subtitle words matched";
 
             return new PeekContent(item.Stem, subtitle, rows);
         }

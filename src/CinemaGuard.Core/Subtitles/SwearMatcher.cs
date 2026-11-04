@@ -91,6 +91,9 @@ public static partial class SwearMatcher
 
     public static bool HasMaskedWord(string? text) => FindMasked(text).Count > 0;
 
+    /// <summary>A masked word in place of each [bleep] marker, which <see cref="FindMasked"/> still finds once brackets are stripped.</summary>
+    public static string MarkBleeps(string text) => BleepMarkerRegex.Replace(text, "BLEEP**");
+
     /// <summary>Word-by-word normalisation used for transcripts: punctuation off, apostrophes kept.</summary>
     public static string NormaliseWord(string word)
     {

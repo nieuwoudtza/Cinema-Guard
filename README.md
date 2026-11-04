@@ -75,7 +75,7 @@ this repository.
 |---|---|
 | `Cinema Guard/` | WinUI 3 app (unpackaged, x64) |
 | `src/CinemaGuard.Core/` | All logic: subtitles, speech engines, FFmpeg, pipeline. No UI. |
-| `tests/CinemaGuard.Core.Tests/` | xUnit tests (196) |
+| `tests/CinemaGuard.Core.Tests/` | xUnit tests (217) |
 | `installer/CinemaGuard.Installer/` | `CinemaGuard-Setup.exe`: folder choice, desktop shortcut, then Velopack install |
 | `publish.ps1` | Builds a release for the WaveBit update server |
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
@@ -213,7 +213,10 @@ status of everything; Settings holds overrides for every path.
 2. Subtitles: your file, a sidecar, an embedded text track, or the speech model.
 3. Transcribe with the chosen model (or the Phonon pair). Engines stay loaded for the whole queue.
 4. Filter hits: words from the transcript(s) plus the subtitle file. Subtitle timings are first
-   fitted to the transcript, which fixes downloads timed for 24.000 fps on a 23.976 fps film.
+   fitted to the transcript, which fixes downloads timed for 24.000 fps on a 23.976 fps film. The
+   subtitle file is then matched to the transcript word by word (shared phrases as anchors,
+   Needleman–Wunsch between them), so a word only the subtitles have, such as a masked `f***` or a
+   word the model heard as another, is muted between the spoken words either side of it.
 5. Write masked subtitles and encode: mute the selected track at the hit ranges, copy the video,
    validate the result, then rename `.partial` to the final name.
 6. Only after validation: the originals are kept, sent to the Recycle Bin or deleted permanently,
@@ -252,7 +255,7 @@ dotnet test "tests\CinemaGuard.Core.Tests\CinemaGuard.Core.Tests.csproj"
 ```
 
 Covers the SRT/VTT/ASS parser, the matcher and masking (including the old off-by-one at the end of a
-cue), mute-range merging, subtitle drift alignment, FFmpeg argument construction, the codec policy,
+cue), mute-range merging, subtitle drift and word-by-word alignment, FFmpeg argument construction, the codec policy,
 the cue builder, the speech catalogue and downloader, and the settings/output-path rules.
 
 ## Contributing

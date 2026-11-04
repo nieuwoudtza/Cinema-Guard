@@ -27,7 +27,7 @@ public sealed record HitCollectorOptions(
         settings.LinePadAfterMs);
 }
 
-public sealed record HitSet(List<Hit> Hits, List<TimeRange> Ranges, SyncFit Fit)
+public sealed record HitSet(List<Hit> Hits, List<TimeRange> Ranges, SyncFit Fit, WordAlignment? Alignment = null)
 {
     public int HitCount => Hits.Count;
 
@@ -69,17 +69,22 @@ public static class HitCollector
         hits.AddRange(transcriptHits);
 
         var fit = SyncFit.Identity;
+        WordAlignment? alignment = null;
+
         if (alignSubtitles && english is not null && subtitleCues is { Count: > 0 })
+        {
             fit = SubtitleAligner.Fit(subtitleCues, english);
+            alignment = WordAligner.Align(subtitleCues, english);
+        }
 
         if (subtitleCues is { Count: > 0 })
-            hits.AddRange(FromSubtitles(subtitleCues, fit, options, transcriptHits));
+            hits.AddRange(FromSubtitles(subtitleCues, fit, options, transcriptHits, alignment));
 
         if (legacyOneWordCues is { Count: > 0 } && english is null)
             hits.AddRange(FromLegacyOneWord(legacyOneWordCues, options));
 
         var ranges = BuildRanges(hits, duration, audioOffset);
-        return new HitSet(hits, ranges, fit);
+        return new HitSet(hits, ranges, fit, alignment);
     }
 
     public static List<Hit> FromTranscript(PhononResult transcript, HitSource source, HitCollectorOptions options)
@@ -132,27 +137,32 @@ public static class HitCollector
         return hits;
     }
 
+    /// <param name="alignment">
+    /// The word-by-word match to the transcript: a single word it can place is timed from the transcript's
+    /// words around it; one it cannot is estimated from its place in the cue, through <paramref name="fit"/>.
+    /// </param>
     public static List<Hit> FromSubtitles(
         IReadOnlyList<Cue> cues,
         SyncFit fit,
         HitCollectorOptions options,
-        IReadOnlyList<Hit> transcriptHits)
+        IReadOnlyList<Hit> transcriptHits,
+        WordAlignment? alignment = null)
     {
         var hits = new List<Hit>();
         var full = options.WordsFull.ToHashSet(StringComparer.Ordinal);
         var single = options.WordsSingle.Where(w => !full.Contains(w)).ToList();
 
-        var padBefore = options.EstimatedPadBeforeMs / 1000.0;
-        var padAfter = options.EstimatedPadAfterMs / 1000.0;
         var linePadBefore = options.LinePadBeforeMs / 1000.0;
         var linePadAfter = options.LinePadAfterMs / 1000.0;
 
-        foreach (var cue in cues)
+        for (var index = 0; index < cues.Count; index++)
         {
+            var cue = cues[index];
             var cueDuration = cue.End.TotalSeconds - cue.Start.TotalSeconds;
             if (cueDuration <= 0) continue;
 
-            var formatted = SubtitleFormatter.FormatCue(cue.Text);
+            // Masks kept, so a censored f*** is found in the same text the word alignment read.
+            var formatted = SubtitleFormatter.FormatCue(cue.Text, keepMasks: true);
             if (formatted.Length == 0) continue;
 
             // The whole line, widened: subtitles are often shown a little before or after the line is spoken.
@@ -163,20 +173,8 @@ public static class HitCollector
                 hits.Add(new Hit(start, end, match.Entry, HitSource.Subtitle, WholeCue: true));
             }
 
-            foreach (var match in SwearMatcher.Find(formatted, single))
-            {
-                var (from, to) = EstimatedSpan(formatted, match, cue);
-                AddEstimatedHit(hits, transcriptHits, fit, from, to, padBefore, padAfter, match.Entry);
-            }
-
-            foreach (var masked in SwearMatcher.FindMasked(cue.Text))
-            {
-                var raw = cue.Text.Replace("\r\n", " ").Replace('\n', ' ');
-                if (raw.Length == 0) continue;
-                var fraction = (masked.Index + masked.Length / 2.0) / raw.Length;
-                var estimate = cue.Start.TotalSeconds + fraction * cueDuration;
-                AddEstimatedHit(hits, transcriptHits, fit, estimate, estimate, padBefore, padAfter, SwearMatcher.MaskedLabel);
-            }
+            foreach (var match in SwearMatcher.Find(formatted, single).Concat(SwearMatcher.FindMasked(formatted)))
+                AddWordHit(hits, transcriptHits, fit, alignment, options, index, cue, formatted, match);
         }
 
         return hits;
@@ -249,25 +247,49 @@ public static class HitCollector
         return merged.Where(r => r.Duration >= MinimumRangeSeconds).ToList();
     }
 
-    private static void AddEstimatedHit(
+    private static void AddWordHit(
         List<Hit> hits,
         IReadOnlyList<Hit> transcriptHits,
         SyncFit fit,
-        double from,
-        double to,
-        double padBefore,
-        double padAfter,
-        string label)
+        WordAlignment? alignment,
+        HitCollectorOptions options,
+        int cueIndex,
+        Cue cue,
+        string formatted,
+        WordMatch match)
     {
-        // Phonon already timed this word precisely; the subtitle estimate adds nothing. Compared where the
-        // fit puts the subtitle word (the transcript's timeline): drifted subtitles are seconds off by the
-        // end of a film, and the raw time would match a different word.
-        var mapped = fit.Map(from);
-        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - mapped) <= SnapWindowSeconds &&
+        var wordPadBefore = options.WordPadBeforeMs / 1000.0;
+        var wordPadAfter = options.WordPadAfterMs / 1000.0;
+        var estimatedPadBefore = options.EstimatedPadBeforeMs / 1000.0;
+        var estimatedPadAfter = options.EstimatedPadAfterMs / 1000.0;
+
+        double spoken, from, to;
+
+        if (alignment?.Locate(cueIndex, match.Index, match.End) is { } span)
+        {
+            // Already on the transcript's timeline. Alone between its neighbours it is timed like a word the
+            // model heard; a share of a longer gap gets the wide padding, but never past those neighbours.
+            spoken = span.Start;
+            from = span.Exact ? span.Start - wordPadBefore : Math.Max(span.Start - estimatedPadBefore, span.GapStart - wordPadBefore);
+            to = span.Exact ? span.End + wordPadAfter : Math.Min(span.End + estimatedPadAfter, span.GapEnd + wordPadAfter);
+        }
+        else
+        {
+            var (start, end) = EstimatedSpan(formatted, match, cue);
+            spoken = fit.Map(start);
+            from = spoken - estimatedPadBefore;
+            to = fit.Map(end) + estimatedPadAfter;
+        }
+
+        // Phonon already timed this word precisely; the subtitle adds nothing. Compared on the transcript's
+        // timeline: drifted subtitles are seconds off by the end of a film, and the raw time would match a
+        // different word.
+        var label = match.Entry;
+        var duplicate = transcriptHits.Any(h => Math.Abs(h.Start - spoken) <= SnapWindowSeconds &&
                                                 (string.Equals(h.Label, label, StringComparison.Ordinal) || label == SwearMatcher.MaskedLabel));
         if (duplicate) return;
 
-        hits.Add(new Hit(fit.Map(from) - padBefore, fit.Map(to) + padAfter, label, HitSource.Subtitle, WholeCue: false));
+        hits.Add(new Hit(from, to, label, HitSource.Subtitle, WholeCue: false));
     }
 
     /// <summary>
