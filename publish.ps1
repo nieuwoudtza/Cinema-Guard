@@ -6,10 +6,12 @@
       1. dotnet publish (self-contained x64, Windows App SDK bundled)
       2. checks the files WinUI and the speech engines need are really in the publish folder
       3. downloads the previous release from the feed, so Velopack can make small delta updates
-      4. vpk pack: the installer, the portable zip and the packages
+      4. vpk pack: Velopack's setup and the packages (no portable zip)
       5. removes every older package, so the release folder holds this version only
       6. builds CinemaGuard-Setup.exe around Velopack's setup (folder choice, desktop shortcut)
       7. with -IisWebConfig only: copies web.config into the release folder
+      8. removes everything the server does not need, so only these are left to upload:
+           releases.win.json, the full and delta .nupkg, CinemaGuard-Setup.exe
 
     Then replace the contents of the IIS folder behind the feed URL with the release folder, deploy\desktop\feed.
     The publish folder, deploy\desktop\publish, is only the input to vpk pack.
@@ -267,7 +269,8 @@ $packArgs = @(
     "--packTitle", "Cinema Guard",
     "--packAuthors", "WaveBit",
     "--outputDir", $ReleasesDir,
-    "--runtime", "win-x64"
+    "--runtime", "win-x64",
+    "--noPortable"
 )
 if ($Icon -and (Test-Path $Icon)) { $packArgs += @("--icon", (Resolve-Path $Icon).Path) }
 $packArgs += $deltaArgs
@@ -297,12 +300,6 @@ $index = Join-Path $ReleasesDir "releases.win.json"
 $assets = @((Get-Content $index -Raw | ConvertFrom-Json).Assets | Where-Object { $_.Version -eq $PackageVersion })
 if (-not ($assets | Where-Object { $_.Type -eq "Full" })) { Fail "releases.win.json does not list the $PackageVersion full package." }
 [IO.File]::WriteAllText($index, (ConvertTo-Json -InputObject @{ Assets = $assets } -Depth 5 -Compress))
-
-$legacyIndex = Join-Path $ReleasesDir "RELEASES"
-if (Test-Path $legacyIndex) {
-    $lines = @(Get-Content $legacyIndex | Where-Object { $_ -match ([regex]::Escape($keep[0]) + '\s') })
-    [IO.File]::WriteAllText($legacyIndex, (($lines -join "`n") + "`n"))
-}
 
 # ---------------------------------------------------------------- installer
 
@@ -339,6 +336,23 @@ elseif (Test-Path $releaseWebConfig) {
     Remove-Item $releaseWebConfig -Force
 }
 
+# ---------------------------------------------------------------- upload set
+
+Step "Removing what the server does not need"
+
+# Clients read releases.win.json only: RELEASES is for apps moving over from Squirrel, which Cinema Guard
+# never was, and assets.win.json is for vpk upload. CinemaGuard-Setup.exe carries Velopack's setup inside
+# it, so that one stays only with -NoInstaller. A portable zip can be left by a build from before --noPortable.
+$extra = @("RELEASES", "assets.win.json", "WaveBit.CinemaGuard-win-Portable.zip")
+if (-not $NoInstaller) { $extra += "WaveBit.CinemaGuard-win-Setup.exe" }
+foreach ($name in $extra) {
+    $file = Join-Path $ReleasesDir $name
+    if (Test-Path $file) {
+        Remove-Item $file -Force
+        Write-Host "Removed $name"
+    }
+}
+
 # ---------------------------------------------------------------- summary
 
 Step "Done"
@@ -349,7 +363,7 @@ Get-ChildItem $ReleasesDir -File |
     Format-Table -AutoSize
 
 Write-Host ""
-Write-Host "Upload everything in:" -ForegroundColor Cyan
+Write-Host "Upload everything in (it holds only what the server needs):" -ForegroundColor Cyan
 Write-Host "  $ReleasesDir"
 Write-Host "to the IIS folder that serves:"
 Write-Host "  $FeedUrl"

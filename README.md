@@ -265,8 +265,8 @@ the channels that carry the word, and joins the channels back in one encode.
 Installed copies update themselves with [Velopack](https://velopack.io/) from
 `https://wavebit.dev/software/cinemaguard`. The feed is a plain folder outside the site's `wwwroot`,
 served by the wavebit.dev MVC app with `UseStaticFiles` (`.nupkg` mapped to
-`application/octet-stream`); upload everything `publish.ps1` writes to `deploy/desktop/feed/`.
-`releases.win.json` is the version list. Only a standalone IIS site or virtual directory needs `deploy/desktop/web.config`
+`application/octet-stream`); upload everything `publish.ps1` writes to `deploy/desktop/feed/`. That is only what the server needs:
+`releases.win.json` (the version list), this version's full and delta `.nupkg`, and `CinemaGuard-Setup.exe`. Only a standalone IIS site or virtual directory needs `deploy/desktop/web.config`
 (`publish.ps1 -IisWebConfig`). `CINEMAGUARD_UPDATE_FEED` points a test install at another folder or
 staging URL.
 
