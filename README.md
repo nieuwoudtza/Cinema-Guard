@@ -35,6 +35,12 @@ Run the setup, choose a folder, and you're done. The app keeps itself up to date
 Requirements: Windows 10 (version 1809 or later) or Windows 11, 64-bit. A graphics card can make transcription
 faster, but isn't needed.
 
+### Browser extension
+
+Cinema Guard also comes as a browser extension for Chrome, Brave and Edge that mutes swearing in YouTube videos while
+you watch, with the same word lists. It is on its way to the Chrome Web Store; until then,
+[extension/README.md](extension/README.md) shows how to load it yourself.
+
 ## How to use it
 
 1. **First launch:** click the one button on the Tools page. It installs FFmpeg and downloads the
@@ -80,6 +86,11 @@ this repository.
 | `publish.ps1` | Builds a release for the WaveBit update server |
 | `deploy/web.config` | IIS settings for a standalone release folder (`.nupkg` MIME type, no-cache); `publish.ps1 -IisWebConfig` |
 | `Cinema Guard/tools/Import-CgDat.ps1` | Reads the old app's `cg.dat` (Windows PowerShell 5.1) |
+| `extension/` | The browser extension (Manifest V3); see [extension/README.md](extension/README.md) |
+| `tests/extension/` | Node tests for the extension's matching, caption parsing and mute timing (`node --test "tests/extension/*.test.mjs"`) |
+| `publish-extension.ps1` | Packs the extension for the Chrome Web Store into `publish\extension\` |
+| `store/chrome-web-store/` | The store listing text, privacy answers, screenshots and promo tile |
+| `userscript/` | The Tampermonkey userscript the extension grew out of (YouTube only, superseded by the extension) |
 
 ### Build and run
 

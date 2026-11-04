@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Cinema Guard</title>
+    <link rel="stylesheet" href="../ui/theme.css">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <header class="top">
+        <img src="../icons/icon-32.png" alt="" width="20" height="20">
+        <span class="app-name">Cinema Guard</span>
+        <label class="switch-label" title="Turn filtering on or off everywhere (Alt+Shift+M)">
+            <span id="enabled-label" class="muted">On</span>
+            <input id="enabled" class="switch" type="checkbox">
+        </label>
+    </header>
+    <main id="main"></main>
+    <footer class="bottom">
+        <button id="open-options" class="button subtle">Options</button>
+        <button id="open-stats" class="button subtle">Statistics</button>
+    </footer>
+    <script src="../shared/catalog.js"></script>
+    <script src="../shared/matcher.js"></script>
+    <script src="../shared/settings.js"></script>
+    <script src="../ui/common.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>

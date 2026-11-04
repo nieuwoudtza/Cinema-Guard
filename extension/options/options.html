@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cinema Guard</title>
+    <link rel="icon" href="../icons/icon-32.png">
+    <link rel="stylesheet" href="../ui/theme.css">
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <div class="shell">
+        <nav class="nav" aria-label="Pages">
+            <div class="nav-title">
+                <img src="../icons/icon-32.png" alt="" width="18" height="18">
+                <span>Cinema Guard</span>
+            </div>
+            <div id="nav-items"></div>
+            <div id="nav-footer" class="nav-footer"></div>
+        </nav>
+        <main class="content">
+            <div class="page" id="page"></div>
+        </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="../shared/catalog.js"></script>
+    <script src="../shared/matcher.js"></script>
+    <script src="../shared/settings.js"></script>
+    <script src="../ui/common.js"></script>
+    <script src="options.js"></script>
+</body>
+</html>
