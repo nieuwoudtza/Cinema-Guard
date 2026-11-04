@@ -48,9 +48,12 @@ Everything the developer dashboard asks for, ready to paste. Images are in this 
 
 | Field | File |
 |---|---|
-| Store icon (128 × 128) | `extension/icons/icon-128.png` |
-| Screenshots (1280 × 800) | `screenshot-1-popup.png` … `screenshot-5-sites.png`, in that order |
+| Store icon (128 × 128, 96 × 96 artwork with transparent padding) | `store-icon-128.png` |
+| Screenshots (1280 × 800, 24-bit PNG) | `screenshot-1-popup.png` … `screenshot-5-sites.png`, in that order |
 | Small promo tile (440 × 280) | `promo-small-440x280.png` |
+| Marquee promo tile (1400 × 560) | `promo-marquee-1400x560.png` |
+
+The description is in `description.txt` as plain text, ready to paste.
 
 **Official URL:** none (it needs a verified domain in Search Console; optional).
 **Homepage URL:** https://wavebit.dev/software/cinemaguard
@@ -79,10 +82,12 @@ statistics stay in the browser; settings sync only through the browser's own syn
 (not sold to third parties; not used or transferred for purposes unrelated to the single purpose; not used to determine
 creditworthiness or for lending).
 
-**Privacy policy URL:** publish the text below (for example at `https://wavebit.dev/software/cinemaguard/privacy`) and
-enter that address.
+**Privacy policy URL:** https://wavebit.dev/software/cinemaguard/privacy
 
-## Privacy policy text
+The page lives in the WaveBit Website project (`wwwroot/docs/software/cinemaguard-privacy.md`, served by
+`SoftwareController.Privacy`). It covers the extension as below and the Windows app as well.
+
+## Privacy policy text (the extension's part)
 
 > **Cinema Guard browser extension: privacy policy**
 >

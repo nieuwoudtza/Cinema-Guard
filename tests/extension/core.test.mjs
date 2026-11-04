@@ -99,6 +99,19 @@ test('the filter defaults match the Windows app', () => {
     assert.deepEqual(catalog.customWords(['FUCK', 'HOLY SHIT']), ['HOLY SHIT']);
     assert.equal(catalog.displayName('FUCK'), 'F*CK');
     assert.equal(catalog.displayName('ASS'), '*SS');
+    // No compound shows a swear word in full.
+    assert.equal(catalog.displayName('CLUSTERFUCK'), 'CLUSTERF*CK');
+    assert.equal(catalog.displayName('MOTHERFUCKER'), 'MOTHERF*CKER');
+    assert.equal(catalog.displayName('BITCHASS'), 'B*TCH*SS');
+    assert.equal(catalog.displayName('HOLY SHIT'), 'HOLY SH*T');
+    assert.equal(catalog.displayName('GODDAMN'), 'G*DD*MN');
+    const swears = ['FUCK', 'SHIT', 'CUNT', 'COCK', 'DICK', 'PUSSY', 'BITCH', 'BASTARD'];
+    for (const root of catalog.ROOTS) {
+        for (const word of catalog.family(root)) {
+            const shown = catalog.displayName(word);
+            assert.ok(!swears.some(swear => shown.includes(swear)), `${word} is shown as ${shown}`);
+        }
+    }
 });
 
 test('settings are checked and imported', () => {

@@ -44,8 +44,8 @@
     const family = root => FAMILIES[root] || [root];
     const unique = list => [...new Set(list)];
 
-    // How the filter page shows a word: one vowel replaced with '*'.
-    function displayName(word) {
+    // The app's rule for showing a word: one vowel replaced with '*', the first after the first letter.
+    function starOneVowel(word) {
         const vowels = 'AEIOU';
         for (let i = 1; i < word.length; i++) {
             if (vowels.includes(word[i])) return word.slice(0, i) + '*' + word.slice(i + 1);
@@ -54,6 +54,16 @@
             if (vowels.includes(word[i])) return word.slice(0, i) + '*' + word.slice(i + 1);
         }
         return word;
+    }
+
+    // Swear words that also appear inside longer ones (CLUSTERFUCK, BULLSHIT, BITCHASS).
+    const EMBEDDED = /FUCK|SHIT|CUNT|COCK|DICK|PUSS|BITCH|BASTARD|DAMN|ARSE|ASS|JESUS|CHRIST|GOD/g;
+
+    // How a word is shown: each swear word inside it gets a starred vowel, so a compound never shows one in full
+    // (MOTHERF*CKER, CL*STERF*CK would show FUCK). Other words follow the app's rule.
+    function displayName(word) {
+        const starred = word.replace(EMBEDDED, starOneVowel);
+        return starred !== word ? starred : starOneVowel(word);
     }
 
     // Every spelling of the family on (true), none (false), or only some of them (null).

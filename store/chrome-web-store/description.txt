@@ -1,0 +1,27 @@
+Cinema Guard mutes swearing in YouTube videos while you watch, so the whole family can enjoy them without the language.
+
+It reads a video's captions ahead of time, finds the words on your list and mutes just those moments. With YouTube's auto-generated captions every word has its own time, so only the word itself goes quiet. The sound fades out and back in over a few milliseconds, so a mute never clicks.
+
+WHAT IT DOES
+• Mutes only the words you choose: tick whole word families, pick single spellings, or add your own words and phrases.
+• Two kinds of mute: the word only (everyday swearing), or the whole sentence (blasphemy and insults).
+• Blanks the filtered words in the captions on screen too, with a character of your choice.
+• Marks on YouTube's progress bar show where a video will be muted.
+• Works on videos, Shorts, and YouTube videos embedded on other sites.
+• Leave channels you trust unfiltered, or pause it on a site.
+• See what was found in the video you're watching, and jump straight to any of it.
+• Statistics: how many words were muted, which ones, and in which videos.
+• Alt+Shift+M turns filtering on or off from any tab.
+• Your settings follow you to your other browsers through your browser's own sync.
+
+OTHER SITES
+Cinema Guard can also run on other sites with captions or subtitles: open a video there, select Cinema Guard in the toolbar and choose Turn on. It reads the video's subtitle tracks, the subtitle files the player downloads, or the captions as they appear on screen.
+
+HELP WANTED: NETFLIX, PRIME VIDEO, DISNEY+, MAX AND HULU
+Cinema Guard knows how these services deliver their subtitles, but they need paid accounts and nobody has been able to test them yet, so they are off by default. If you have one of these services and would like to help, open a video there, select Cinema Guard in the toolbar, choose "Try it anyway", and tell us how it went: https://github.com/nieuwoudtza/Cinema-Guard/issues
+
+PRIVATE BY DESIGN
+No account, no tracking, no data sent anywhere. Captions are read and matched inside your browser.
+
+FOR YOUR OWN FILMS
+Cinema Guard for Windows cleans your own video files the same way, with muted words and clean subtitles in a new copy: https://wavebit.dev/software/cinemaguard
