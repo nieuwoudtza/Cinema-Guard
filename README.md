@@ -228,7 +228,7 @@ Older builds treat these options as paths that do not exist and ignore them, and
 
 | Tool | Why | Where |
 |---|---|---|
-| FFmpeg + FFprobe 7.1+ | probe, mute, encode, extract | installed by the app on the Tools page (one click); an existing FFmpeg 7.1+ on PATH is used instead |
+| FFmpeg + FFprobe 7.1+ | probe, mute, encode, extract | installed by the app on the Tools page (one click); an existing FFmpeg 7.1+ on PATH is used instead. Every copy's version is checked before a file is transcribed: an older one, or a git build whose version cannot be read, is skipped for the next copy on PATH, or the run stops at once |
 | Docker Desktop + `ghcr.io/fermionresearch/phonon-cuda:1.0.11` | Phonon on the GPU (optional) | started on demand |
 | `subloader-cli` | OpenSubtitles download (optional) | `C:\Program Files\Subloader` |
 

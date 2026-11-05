@@ -2,6 +2,7 @@ using CinemaGuard.Core.Ffmpeg;
 using CinemaGuard.Core.Intervals;
 using CinemaGuard.Core.Media;
 using CinemaGuard.Core.Settings;
+using CinemaGuard.Core.Tools;
 
 namespace CinemaGuard.Core.Tests;
 
@@ -671,5 +672,37 @@ public class DialogueLeakTests
         {
             File.Delete(path);
         }
+    }
+}
+
+public class FfmpegVersionTests
+{
+    [Theory]
+    // Releases: the number decides.
+    [InlineData("ffmpeg version 8.1.2-full_build-www.gyan.dev Copyright (c) 2000-2026", "8.1.2", true)]
+    [InlineData("ffmpeg version 7.1-essentials_build-www.gyan.dev Copyright (c) 2000-2024", "7.1", true)]
+    [InlineData("ffmpeg version n7.1.1 Copyright (c) 2000-2025", "7.1.1", true)]
+    [InlineData("ffmpeg version 7.0.2-full_build-www.gyan.dev Copyright (c) 2000-2024", "7.0.2", false)]
+    [InlineData("ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021", "4.4.2", false)]
+    // Git builds name a date or commit: libavutil decides (7.1 shipped 59.39).
+    [InlineData("ffmpeg version 2023-10-12-git-a7663c9604-full_build-www.gyan.dev Copyright (c) 2000-2023\nlibavutil      58. 27.100 / 58. 27.100", "2023-10-12-git-a7663c9604-full_build-www.gyan.dev", false)]
+    [InlineData("ffmpeg version N-114000-g1a2b3c4d5e-20240301 Copyright (c) 2000-2024\nlibavutil      59.  8.100 / 59.  8.100", "N-114000-g1a2b3c4d5e-20240301", false)]
+    [InlineData("ffmpeg version N-117000-g1a2b3c4d5e-20240920 Copyright (c) 2000-2024\nlibavutil      59. 39.100 / 59. 39.100", "N-117000-g1a2b3c4d5e-20240920", true)]
+    [InlineData("ffmpeg version 2026-10-01-git-0123456789-full_build-www.gyan.dev\r\nlibavutil      60. 30.100 / 60. 30.100\r\n", "2026-10-01-git-0123456789-full_build-www.gyan.dev", true)]
+    public void ReadsTheFfmpegVersion(string banner, string version, bool supported)
+    {
+        var (read, problem) = ToolLocator.ReadFfmpegVersion(banner);
+
+        Assert.Equal(version, read);
+        Assert.Equal(supported, problem is null);
+    }
+
+    [Fact]
+    public void ABuildWithNoVersionAtAllIsNotTrusted()
+    {
+        var (version, problem) = ToolLocator.ReadFfmpegVersion("ffmpeg version 2023-10-12-git-a7663c9604-full_build-www.gyan.dev Copyright (c) 2000-2023");
+
+        Assert.Equal("2023-10-12-git-a7663c9604-full_build-www.gyan.dev", version);
+        Assert.Equal("Cannot tell which FFmpeg version this is: 7.1 or newer is required", problem);
     }
 }

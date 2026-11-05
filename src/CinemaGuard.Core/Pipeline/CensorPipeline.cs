@@ -83,9 +83,15 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         EnsureReadable(item.InputPath);
 
-        var ffmpeg = locator.ResolveFfmpeg(settings)
+        // Checked before the transcript: an FFmpeg too old to mute would otherwise fail only after it.
+        var choice = await locator.FindSupportedFfmpegAsync(settings, cancellationToken);
+        var ffmpeg = choice.Path
                      ?? throw new PipelineException("FFmpeg is not installed. Open Tools and press Set up to install it.");
-        var ffprobe = locator.ResolveFfprobe(settings)
+        if (choice.Problem is not null)
+            throw new PipelineException($"{choice.Problem} ({ffmpeg}). " + (string.IsNullOrWhiteSpace(settings.FfmpegPath)
+                ? "Open Tools and press Set up to install a current copy."
+                : "Choose a newer one in Settings, or clear the FFmpeg path there and press Set up on Tools."));
+        var ffprobe = locator.ResolveFfprobe(settings, ffmpeg)
                       ?? throw new PipelineException("FFprobe is not installed. Open Tools and press Set up to install it.");
 
         SetStatus(item, "Reading media information");

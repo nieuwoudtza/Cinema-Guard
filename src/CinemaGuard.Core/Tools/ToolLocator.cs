@@ -66,6 +66,9 @@ public sealed record ToolStatus(
     public bool Ready => Found && Problem is null;
 }
 
+/// <param name="Problem">Why <paramref name="Path"/> cannot be used; null when it is ready.</param>
+public sealed record FfmpegChoice(string? Path, string? Version, string? Problem);
+
 public sealed record ToolSnapshot(
     IReadOnlyList<ToolStatus> Tools,
     bool FfmpegReady,
@@ -101,12 +104,98 @@ public sealed partial class ToolLocator(IProcessRunner runner)
         return File.Exists(beside) ? beside : null;
     }
 
-    public string? ResolveFfprobe(AppSettings settings)
+    /// <summary>
+    /// The FFmpeg to run, checked to be 7.1 or newer: the one set in Settings, else the first new enough of the
+    /// Tools page's copy, one beside the app and every copy on PATH, so an old build early on PATH does not hide a
+    /// newer one. With none new enough, the first copy found and why it cannot be used.
+    /// </summary>
+    public async Task<FfmpegChoice> FindSupportedFfmpegAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        var configured = Resolve(settings.FfmpegPath, "ffmpeg.exe");
+        IEnumerable<string?> candidates = configured is not null
+            ? [configured]
+            : [FindLocalFfmpeg(), .. FindAllOnPath("ffmpeg"), .. FindAllOnPath("ffprobe").Select(BesideProbe)];
+
+        FfmpegChoice? first = null;
+
+        foreach (var path in candidates.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var choice = await CheckFfmpegAsync(path, cancellationToken);
+            if (choice.Problem is null) return choice;
+            first ??= choice;
+        }
+
+        return first ?? new FfmpegChoice(null, null, "Not found");
+    }
+
+    private async Task<FfmpegChoice> CheckFfmpegAsync(string path, CancellationToken cancellationToken)
+    {
+        var key = $"{path}|{File.GetLastWriteTimeUtc(path).Ticks}";
+        if (_ffmpegChecks.TryGetValue(key, out var known)) return known;
+
+        var result = await runner.RunAsync(new ProcessSpec(path, ["-hide_banner", "-version"]), cancellationToken: cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var output = result.StdOut.Length > 0 ? result.StdOut : result.StdErr;
+        var (version, problem) = string.IsNullOrWhiteSpace(output)
+            ? (null, "Found but did not run")
+            : ReadFfmpegVersion(output);
+
+        var choice = new FfmpegChoice(path, version, problem);
+        // A copy that did not run may work next time (a slow disk, a virus scan); only an answer is kept.
+        if (version is not null) _ffmpegChecks[key] = choice;
+        return choice;
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, FfmpegChoice> _ffmpegChecks = new();
+
+    /// <summary>
+    /// The version <c>ffmpeg -version</c> reports, and why it is too old (null when it is 7.1 or newer). A release
+    /// names its number; a git build (2023-10-12-git-…, N-112345-g…) names a date or commit instead, so its
+    /// libavutil version decides: 7.1 shipped libavutil 59.39. A build that shows neither is not trusted.
+    /// </summary>
+    public static (string? Version, string? Problem) ReadFfmpegVersion(string output)
+    {
+        var firstLine = output.Split('\n').FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim() ?? string.Empty;
+        var name = FfmpegNameRegex().Match(firstLine) is { Success: true } named ? named.Groups[1].Value : firstLine;
+
+        if (FfmpegReleaseRegex().Match(firstLine) is { Success: true } release)
+        {
+            var number = release.Groups[1].Value;
+            var parts = number.Split('.').Select(int.Parse).ToArray();
+            var tooOld = parts[0] < 7 || (parts[0] == 7 && parts[1] < 1);
+            return (number, tooOld ? $"FFmpeg {number} is too old: 7.1 or newer is required" : null);
+        }
+
+        if (LibavutilRegex().Match(output) is { Success: true } avutil)
+        {
+            var major = int.Parse(avutil.Groups[1].Value);
+            var minor = int.Parse(avutil.Groups[2].Value);
+            var tooOld = major < 59 || (major == 59 && minor < 39);
+            return (name, tooOld ? $"FFmpeg {name} is older than 7.1, which is required" : null);
+        }
+
+        return (name.Length > 0 ? name : null, "Cannot tell which FFmpeg version this is: 7.1 or newer is required");
+    }
+
+    [GeneratedRegex(@"^ffmpeg version (\S+)", RegexOptions.IgnoreCase)]
+    private static partial Regex FfmpegNameRegex();
+
+    /// <summary>A release number at the start of the version (7.1.2-full_build, n7.1, 4.4.2-0ubuntu0.22.04.1).</summary>
+    [GeneratedRegex(@"^ffmpeg version n?([0-9]+\.[0-9]+(?:\.[0-9]+)*)", RegexOptions.IgnoreCase)]
+    private static partial Regex FfmpegReleaseRegex();
+
+    [GeneratedRegex(@"^\s*libavutil\s+([0-9]+)\.\s*([0-9]+)\.", RegexOptions.Multiline)]
+    private static partial Regex LibavutilRegex();
+
+    public string? ResolveFfprobe(AppSettings settings) => ResolveFfprobe(settings, ResolveFfmpeg(settings));
+
+    /// <summary>The FFprobe set in Settings, else the one beside <paramref name="ffmpeg"/>, else the first on PATH.</summary>
+    public string? ResolveFfprobe(AppSettings settings, string? ffmpeg)
     {
         var explicitProbe = Resolve(settings.FfprobePath, "ffprobe.exe");
         if (explicitProbe is not null) return explicitProbe;
 
-        var ffmpeg = ResolveFfmpeg(settings);
         if (ffmpeg is not null)
         {
             var beside = Path.Combine(Path.GetDirectoryName(ffmpeg) ?? string.Empty, "ffprobe.exe");
@@ -116,9 +205,10 @@ public sealed partial class ToolLocator(IProcessRunner runner)
         return FindOnPath("ffprobe");
     }
 
-    private string? FindBesideFfprobe()
+    private static string? FindBesideFfprobe() => BesideProbe(FindOnPath("ffprobe"));
+
+    private static string? BesideProbe(string? probe)
     {
-        var probe = FindOnPath("ffprobe");
         if (probe is null) return null;
         var beside = Path.Combine(Path.GetDirectoryName(probe) ?? string.Empty, "ffmpeg.exe");
         return File.Exists(beside) ? beside : null;
@@ -154,21 +244,22 @@ public sealed partial class ToolLocator(IProcessRunner runner)
         return null;
     }
 
-    public static string? FindOnPath(string fileName)
+    public static string? FindOnPath(string fileName) => FindAllOnPath(fileName).FirstOrDefault();
+
+    /// <summary>Every copy on PATH, in PATH order.</summary>
+    public static IEnumerable<string> FindAllOnPath(string fileName)
     {
         var pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        var extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';');
+        var extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';', StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var directory in pathVariable.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             foreach (var extension in extensions)
             {
                 var candidate = Path.Combine(directory, fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase) ? fileName : fileName + extension.ToLowerInvariant());
-                if (File.Exists(candidate) && !RejectOldAppPath(candidate)) return candidate;
+                if (File.Exists(candidate) && !RejectOldAppPath(candidate)) yield return candidate;
             }
         }
-
-        return null;
     }
 
     /// <summary>The tools <see cref="CheckAsync"/> reports, by key and in order, for a list shown before the checks finish.</summary>
@@ -191,14 +282,17 @@ public sealed partial class ToolLocator(IProcessRunner runner)
             return result;
         }
 
+        // The same choice a run makes, so this page never calls ready a copy the run would refuse.
+        var ffmpegChoice = Task.Run(() => FindSupportedFfmpegAsync(settings, cancellationToken), cancellationToken);
+
         var ffmpegTask = Check(async () =>
         {
-            var status = await CheckVersionAsync("ffmpeg", "FFmpeg", ResolveFfmpeg(settings), ["-version"], required: true, cancellationToken);
-            return status with { Problem = CheckFfmpegVersion(status) };
+            var choice = await ffmpegChoice;
+            return new ToolStatus("ffmpeg", "FFmpeg", choice.Path is not null, true, choice.Path, choice.Version, choice.Problem);
         }, status => status);
 
         var ffprobeTask = Check(
-            () => CheckVersionAsync("ffprobe", "FFprobe", ResolveFfprobe(settings), ["-version"], required: true, cancellationToken),
+            async () => await CheckVersionAsync("ffprobe", "FFprobe", ResolveFfprobe(settings, (await ffmpegChoice).Path), ["-version"], required: true, cancellationToken),
             status => status);
 
         var dockerTask = Check(() => CheckDockerAsync(ResolveDocker(settings), settings, cancellationToken), result => result.Status);
@@ -286,27 +380,6 @@ public sealed partial class ToolLocator(IProcessRunner runner)
         var version = VersionRegex().Match(firstLine ?? string.Empty).Value;
         return new ToolStatus(key, displayName, true, required, path,
             string.IsNullOrEmpty(version) ? firstLine : version, null);
-    }
-
-    private static string? CheckFfmpegVersion(ToolStatus status)
-    {
-        if (!status.Found) return status.Problem;
-
-        var match = VersionRegex().Match(status.Version ?? string.Empty);
-        if (!match.Success) return null;
-
-        var parts = match.Value.Split('.');
-        if (!int.TryParse(parts[0], out var major)) return null;
-
-        if (major < 7) return $"FFmpeg {match.Value} is too old: 7.1 or newer is required";
-
-        if (major == 7)
-        {
-            var minor = parts.Length > 1 && int.TryParse(parts[1], out var value) ? value : 0;
-            if (minor < 1) return "FFmpeg 7.0 is too old: 7.1 or newer is required";
-        }
-
-        return null;
     }
 
     [GeneratedRegex(@"[0-9]+(?:\.[0-9]+)+")]

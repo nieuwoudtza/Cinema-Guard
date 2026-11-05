@@ -400,6 +400,126 @@ public class SpeechTests
         }
     }
 
+    /// <summary>Answers <c>-version</c> with the banner set for each path; records which copies were asked.</summary>
+    private sealed class FfmpegBanners(Dictionary<string, string> banners) : IProcessRunner
+    {
+        public List<string> Asked { get; } = [];
+
+        public Task<ProcessResult> RunAsync(
+            ProcessSpec spec, Action<string>? onStandardOutput = null, Action<string>? onStandardError = null, CancellationToken cancellationToken = default)
+        {
+            Asked.Add(spec.FileName);
+            return Task.FromResult(banners.TryGetValue(spec.FileName, out var banner)
+                ? new ProcessResult(0, banner, string.Empty, false)
+                : new ProcessResult(1, string.Empty, string.Empty, false));
+        }
+    }
+
+    private const string DatedGitBuild =
+        "ffmpeg version 2023-10-12-git-a7663c9604-full_build-www.gyan.dev Copyright (c) 2000-2023 the FFmpeg developers\n" +
+        "libavutil      58. 27.100 / 58. 27.100\nlibavfilter     9. 11.100 /  9. 11.100\n";
+
+    private const string Release81 =
+        "ffmpeg version 8.1.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers\n" +
+        "libavutil      60. 26.102 / 60. 26.102\n";
+
+    [Fact]
+    public async Task AnOldFfmpegEarlyOnThePathDoesNotHideANewerOne()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cg-path-" + Guid.NewGuid().ToString("N"));
+        var previousRoot = SpeechPaths.Root;
+        var previousPath = Environment.GetEnvironmentVariable("PATH");
+
+        var oldFolder = Path.Combine(root, "old");
+        var newFolder = Path.Combine(root, "new");
+        var oldFfmpeg = Path.Combine(oldFolder, "ffmpeg.exe");
+        var newFfmpeg = Path.Combine(newFolder, "ffmpeg.exe");
+
+        try
+        {
+            SpeechPaths.Root = Path.Combine(root, "app"); // no copy from the Tools page
+            foreach (var file in new[] { oldFfmpeg, Path.Combine(oldFolder, "ffprobe.exe"), newFfmpeg, Path.Combine(newFolder, "ffprobe.exe") })
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.WriteAllText(file, "not a real exe");
+            }
+
+            Environment.SetEnvironmentVariable("PATH", $"{oldFolder};{newFolder};{previousPath}");
+
+            var runner = new FfmpegBanners(new() { [oldFfmpeg] = DatedGitBuild, [newFfmpeg] = Release81 });
+            var locator = new ToolLocator(runner);
+
+            var choice = await locator.FindSupportedFfmpegAsync(new AppSettings());
+            Assert.Equal(newFfmpeg, choice.Path);
+            Assert.Equal("8.1.2", choice.Version);
+            Assert.Null(choice.Problem);
+
+            // FFprobe comes from the same folder as the FFmpeg chosen, not the first on PATH.
+            Assert.Equal(Path.Combine(newFolder, "ffprobe.exe"), locator.ResolveFfprobe(new AppSettings(), choice.Path));
+
+            // The Tools page shows the same choice.
+            var snapshot = await locator.CheckAsync(new AppSettings());
+            Assert.True(snapshot.FfmpegReady);
+            Assert.Equal(newFfmpeg, snapshot.Tools.First(t => t.Key == "ffmpeg").Path);
+
+            // An FFmpeg set in Settings is the only one tried, and its problem is reported, not worked around.
+            var pinned = await locator.FindSupportedFfmpegAsync(new AppSettings { FfmpegPath = oldFfmpeg });
+            Assert.Equal(oldFfmpeg, pinned.Path);
+            Assert.Contains("older than 7.1", pinned.Problem);
+
+            // Each copy's version is asked once, however often a queue checks.
+            Assert.Single(runner.Asked, oldFfmpeg);
+            Assert.Single(runner.Asked, newFfmpeg);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", previousPath);
+            SpeechPaths.Root = previousRoot;
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OnlyAnOldFfmpegFailsTheRunBeforeTheTranscript()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cg-oldffmpeg-" + Guid.NewGuid().ToString("N"));
+        var ffmpeg = Path.Combine(root, "ffmpeg.exe");
+        var film = Path.Combine(root, "film.mkv");
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(ffmpeg, "not a real exe");
+            File.WriteAllText(film, "not a real film");
+
+            var runner = new FfmpegBanners(new() { [ffmpeg] = DatedGitBuild });
+            var locator = new ToolLocator(runner);
+            var speech = new SpeechService(
+                new ModelManager(new SettingsService(Path.Combine(root, "settings.json")), runner),
+                new PhononService(runner, locator),
+                locator);
+            var pipeline = new CensorPipeline(runner, locator, speech);
+
+            var settings = AppSettings.CreateDefault();
+            settings.FfmpegPath = ffmpeg;
+            settings.FfprobePath = ffmpeg;
+
+            var item = new MediaItem(film);
+            await pipeline.RunAsync(item, settings, CancellationToken.None);
+
+            Assert.Equal(MediaStatus.Failed, item.Status);
+            Assert.Contains("2023-10-12-git-a7663c9604-full_build-www.gyan.dev is older than 7.1", item.Message);
+            Assert.Contains("Choose a newer one in Settings", item.Message);
+            // Nothing ran after the version check: no probe, no audio, no speech model.
+            Assert.Equal([ffmpeg], runner.Asked);
+        }
+        finally
+        {
+            new MediaItem(film).DeleteCache();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("60F467265B1E312373DBCD92200C2618A74850F98D3D078E94296BB3FA2047BA\n", "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba")]
     [InlineData("60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba  ffmpeg-release-essentials.zip", "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba")]
