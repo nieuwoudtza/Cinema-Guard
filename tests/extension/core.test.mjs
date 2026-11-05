@@ -137,6 +137,23 @@ test('settings are checked and imported', () => {
     }
 });
 
+test('lists saved before the new spellings get them', () => {
+    assert.ok(defaults.wordsSingle.includes('MOTHERFUCK') && defaults.wordsSingle.includes('MUTHAFUCKA'));
+    assert.deepEqual(matcher.find('Motherfuck! Shit!', defaults.wordsSingle).map(match => match.entry), ['MOTHERFUCK']);
+
+    const old = settings.normalise({ wordsFull: ['GODDAMN'], wordsSingle: ['MOTHERFUCKER', 'DIPSHIT'] });
+    assert.ok(old.wordsFull.includes('GODDAMMIT') && !old.wordsSingle.includes('GODDAMMIT'));
+    assert.ok(old.wordsSingle.includes('MOTHERFUCK') && !old.wordsSingle.includes('DUMBFUCKS'));
+    assert.equal(old.catalogVersion, catalog.VERSION);
+
+    // Saved with this catalog: a spelling the viewer took off stays off.
+    const current = settings.normalise({ wordsSingle: ['MOTHERFUCKER'], catalogVersion: catalog.VERSION });
+    assert.deepEqual(current.wordsSingle, ['MOTHERFUCKER']);
+
+    const oldApp = settings.importSettings({ SchemaVersion: 3, WordsSingle: ['MOTHERFUCKER'] }, defaults);
+    assert.ok(oldApp.wordsSingle.includes('MOTHERFUCK'));
+});
+
 test('blanking keeps the line length', () => {
     assert.equal(matcher.maskText('Shit. Fuck you, Jesus!', ['FUCK', 'JESUS'], '*'), 'Shit. **** you, *****!');
     assert.equal(matcher.maskText('holy shit', ['HOLY SHIT'], '#'), '#### ####');

@@ -113,6 +113,9 @@ public static class LegacySettingsImporter
 
             settings.Normalise();
 
+            // The old app's lists predate the spellings added since.
+            if (wordsFull.Count > 0 || wordsSingle.Count > 0) FilterCatalog.AddNewSpellings(settings.WordsFull, settings.WordsSingle);
+
             var summary = $"{settings.WordsFull.Count + settings.WordsSingle.Count} filtered words, " +
                           $"{settings.SubtitleOutput} subtitles, {settings.OutputContainer} output, " +
                           $"language {settings.PreferredLanguage}.";

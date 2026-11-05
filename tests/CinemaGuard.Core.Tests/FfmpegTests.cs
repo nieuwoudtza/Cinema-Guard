@@ -105,7 +105,7 @@ public class FfmpegCommandTests
 
         var mp4 = FfmpegCommands.Encode(Request(probe) with
         {
-            Subtitles = [new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng")],
+            Subtitles = [new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng", Shown: true)],
         });
 
         Assert.Equal("mov_text", ArgList.Next(mp4, "-c:s:0"));
@@ -116,7 +116,7 @@ public class FfmpegCommandTests
             Container = OutputContainer.Mkv,
             Subtitles =
             [
-                new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng"),
+                new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng", Shown: true),
                 new SubtitleInput(@"C:\tmp\censored.srt", "Censored", "eng"),
             ],
         });
@@ -192,12 +192,35 @@ public class FfmpegCommandTests
             Subtitles =
             [
                 new SubtitleInput(@"C:\tmp\forced.srt", "Forced", "eng", Forced: true),
-                new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng"),
+                new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng", Shown: true),
             ],
         });
 
         Assert.Equal("forced", ArgList.Next(arguments, "-disposition:s:0"));
         Assert.Equal("default", ArgList.Next(arguments, "-disposition:s:1"));
+    }
+
+    [Fact]
+    public void TheShownSubtitleTrackIsTheDefaultAndOffLeavesNone()
+    {
+        var probe = Probe();
+        SubtitleInput[] Tracks(bool showFull, bool showCensored) =>
+        [
+            new SubtitleInput(@"C:\tmp\full.srt", "Full", "eng", Shown: showFull),
+            new SubtitleInput(@"C:\tmp\censored.srt", "Censored", "eng", Shown: showCensored),
+        ];
+
+        var censored = Request(probe) with { Subtitles = Tracks(false, true) };
+        var arguments = FfmpegCommands.Encode(censored);
+        Assert.Equal(1, censored.ShownSubtitle);
+        Assert.Equal("0", ArgList.Next(arguments, "-disposition:s:0"));
+        Assert.Equal("default", ArgList.Next(arguments, "-disposition:s:1"));
+
+        var off = Request(probe) with { Subtitles = Tracks(false, false) };
+        arguments = FfmpegCommands.Encode(off);
+        Assert.Equal(-1, off.ShownSubtitle);
+        Assert.Equal("0", ArgList.Next(arguments, "-disposition:s:0"));
+        Assert.Equal("0", ArgList.Next(arguments, "-disposition:s:1"));
     }
 
     [Fact]
@@ -497,5 +520,156 @@ public class FilterScriptTests
         Assert.Contains("[FC]volume=enable='between(t,1.000,2.000)':volume=0[FCm]", graph);
         Assert.Contains("[LFE]anull[LFEm]", graph);
         Assert.Contains("join=inputs=6:channel_layout=5.1(side):map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-SL|5.0-SR[muted]", graph);
+    }
+}
+
+public class Mp4SubtitleFlagsTests
+{
+    private static byte[] Box(string type, params byte[][] content)
+    {
+        var body = content.SelectMany(part => part).ToArray();
+        var box = new byte[8 + body.Length];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(box, (uint)box.Length);
+        System.Text.Encoding.ASCII.GetBytes(type).CopyTo(box, 4);
+        body.CopyTo(box, 8);
+        return box;
+    }
+
+    /// <summary>A track whose stsd holds one sample entry: reserved, data reference index, then the entry's fields.</summary>
+    private static byte[] Track(string entryType) =>
+        Box("trak", Box("tkhd", new byte[84]), Box("mdia", Box("minf", Box("stbl",
+            Box("stsd", [0, 0, 0, 0, 0, 0, 0, 1], Box(entryType, new byte[6], [0, 1], new byte[30]))))));
+
+    [Fact]
+    public void FlagsTheChosenTextTrackAndNothingElse()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"cg-mp4-{Guid.NewGuid():N}.mp4");
+
+        try
+        {
+            // A 64-bit mdat before the movie header, as FFmpeg writes a large film.
+            var mdat = new byte[16 + 32];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(mdat, 1);
+            "mdat"u8.CopyTo(mdat.AsSpan(4));
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(mdat.AsSpan(8), (ulong)mdat.Length);
+
+            File.WriteAllBytes(path, [.. Box("ftyp", "isom"u8.ToArray()), .. mdat,
+                .. Box("moov", Box("mvhd", new byte[100]), Track("avc1"), Track("tx3g"), Track("tx3g"))]);
+
+            var before = File.ReadAllBytes(path);
+            Assert.Equal([0u, 0u], Mp4SubtitleFlags.Read(path));
+
+            Assert.True(Mp4SubtitleFlags.Show(path, 1));
+            Assert.Equal([0u, Mp4SubtitleFlags.AllSamplesForced], Mp4SubtitleFlags.Read(path));
+
+            // Only the flag's byte changed.
+            var after = File.ReadAllBytes(path);
+            Assert.Equal(before.Length, after.Length);
+            Assert.Single(before.Zip(after), pair => pair.First != pair.Second);
+
+            Assert.False(Mp4SubtitleFlags.Show(path, 2));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+}
+
+public class DialogueLeakTests
+{
+    private const int Rate = 16000;
+
+    private static float[] Noise(int seed, double seconds = 0.6, double level = 0.2)
+    {
+        var random = new Random(seed);
+        return Enumerable.Range(0, (int)(seconds * Rate)).Select(_ => (float)((random.NextDouble() * 2 - 1) * level)).ToArray();
+    }
+
+    private static float[] Mix(float[] a, double gainA, float[] b, double gainB, int delay = 0) =>
+        a.Select((x, i) => (float)(x * gainA + (i >= delay ? b[i - delay] : 0) * gainB)).ToArray();
+
+    [Fact]
+    public void AChannelWithTheCentresWordsUnderItsOwnSoundCarriesThem()
+    {
+        var speech = Noise(1);
+        var effects = Noise(2);
+
+        // The words 20 dB down and a few samples late, under the channel's own effects (14 dB louder than them).
+        var front = Mix(effects, 0.5, speech, 0.1, delay: 4);
+        var (correlation, level) = DialogueLeak.Measure(speech, front, Rate);
+
+        Assert.InRange(level, -21, -19);
+        Assert.True(correlation > DialogueLeak.MinimumCorrelation);
+        Assert.True(DialogueLeak.CarriesSpeech(speech, front, Rate));
+    }
+
+    [Fact]
+    public void TheWordsReverbInASurroundChannelIsFound()
+    {
+        var speech = Noise(1);
+
+        // The room's echo of the words 30 ms late and 15 dB down, over quiet ambience.
+        var surround = Mix(Noise(4), 0.1, speech, 0.18, delay: Rate * 30 / 1000);
+
+        Assert.True(DialogueLeak.CarriesSpeech(speech, surround, Rate));
+    }
+
+    [Fact]
+    public void UnrelatedOrFaintSoundIsLeftPlaying()
+    {
+        var speech = Noise(1);
+
+        Assert.False(DialogueLeak.CarriesSpeech(speech, Noise(3), Rate));
+        Assert.False(DialogueLeak.CarriesSpeech(speech, Mix(Noise(3), 1, speech, 0.01), Rate));
+
+        // Words 20 dB down under effects 6 dB louder than the dialogue are drowned out.
+        Assert.False(DialogueLeak.CarriesSpeech(speech, Mix(Noise(3), 2, speech, 0.1), Rate));
+        Assert.False(DialogueLeak.CarriesSpeech(speech, new float[speech.Length], Rate));
+        Assert.False(DialogueLeak.CarriesSpeech(new float[speech.Length], Noise(3), Rate));
+    }
+
+    [Fact]
+    public void WavReaderReadsAStretchByTime()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"cg-wav-{Guid.NewGuid():N}.wav");
+
+        try
+        {
+            var samples = Enumerable.Range(0, Rate * 2).Select(i => (short)(i % 1000)).ToArray();
+
+            using (var writer = new BinaryWriter(File.Create(path)))
+            {
+                writer.Write("RIFF"u8);
+                writer.Write(36 + 12 + samples.Length * 2);
+                writer.Write("WAVE"u8);
+                writer.Write("fmt "u8);
+                writer.Write(16);
+                writer.Write((short)1);
+                writer.Write((short)1);
+                writer.Write(Rate);
+                writer.Write(Rate * 2);
+                writer.Write((short)2);
+                writer.Write((short)16);
+                // ffmpeg's LIST chunk, which a reader has to step over.
+                writer.Write("LIST"u8);
+                writer.Write(4);
+                writer.Write("INFO"u8);
+                writer.Write("data"u8);
+                writer.Write(samples.Length * 2);
+                foreach (var sample in samples) writer.Write(sample);
+            }
+
+            using var reader = new MonoWavReader(path);
+            var stretch = reader.Read(1.0, 1.5);
+
+            Assert.Equal(Rate / 2, stretch.Length);
+            Assert.Equal(Rate % 1000 / 32768f, stretch[0]);
+            Assert.Equal(Rate / 2, reader.Read(1.5, 9).Length);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

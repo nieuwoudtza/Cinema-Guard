@@ -133,9 +133,14 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         fileProgress.Plan(EncodeStep, ExpectedEncodeSeconds(features, reencodesAudio: true));
         fileProgress.Plan(CheckStep, StepEstimates.CheckOutput);
 
+        var centreRead = vocalsChannels.Count > 0 && ChannelLayouts.HasFrontCenter(audio.Stream.ChannelLayout);
+
         if (vocalsChannels.Count > 0)
         {
             var transcribeSeconds = ExpectedTranscribeSeconds(SpeechService.Plan(settings).Primary, settings, features);
+
+            // The centre is only read (to find its words in the other channels), not transcribed again.
+            if (centreRead) fileProgress.Plan(ChannelAudioStep("FC"), ExpectedExtractSeconds(features));
 
             foreach (var channel in vocalsChannels)
             {
@@ -148,6 +153,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         void DropVocalsChannels()
         {
+            if (centreRead) fileProgress.Drop(ChannelAudioStep("FC"));
+
             foreach (var channel in vocalsChannels)
             {
                 fileProgress.Drop(ChannelAudioStep(channel));
@@ -351,6 +358,20 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
                 if (!File.Exists(partialPath))
                     throw new PipelineException("FFmpeg reported success but wrote no output file.");
+
+                // VLC ignores an MP4 subtitle track's default flag; this is what makes it show the track.
+                if (container == OutputContainer.Mp4 && request.ShownSubtitle >= 0)
+                {
+                    try
+                    {
+                        if (!Mp4SubtitleFlags.Show(partialPath, request.ShownSubtitle))
+                            Log.Warn($"{item.Stem}: the shown subtitle track was not found in the output.");
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Log.Warn($"{item.Stem}: could not mark the subtitles to be shown: {ex.Message}");
+                    }
+                }
 
                 SetStatus(item, "Checking the output");
 
@@ -608,8 +629,17 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             return inputs;
         }
 
-        if (result.FullPath is not null) inputs.Add(new SubtitleInput(result.FullPath, "Full", item.Language));
-        if (result.CensoredPath is not null) inputs.Add(new SubtitleInput(result.CensoredPath, "Censored", item.Language));
+        // The track chosen in Settings is shown when the video opens; when only the other one is written, that one.
+        var showFull = settings.ShowSubtitles switch
+        {
+            ShownSubtitles.Full => result.FullPath is not null,
+            ShownSubtitles.Censored => result.CensoredPath is null,
+            _ => false,
+        };
+        var showCensored = settings.ShowSubtitles != ShownSubtitles.Off && !showFull;
+
+        if (result.FullPath is not null) inputs.Add(new SubtitleInput(result.FullPath, "Full", item.Language, Shown: showFull));
+        if (result.CensoredPath is not null) inputs.Add(new SubtitleInput(result.CensoredPath, "Censored", item.Language, Shown: showCensored));
 
         return inputs;
     }
@@ -700,64 +730,128 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             wholeCueHits = HitCollector.FromSubtitles(subtitleCues, hits.Fit, options, []).Where(h => h.WholeCue).ToList();
 
         var dialogueChannels = channels.Where(channel => ChannelLayouts.DialogueChannels.Contains(channel)).ToList();
+
+        // The centre is muted wherever the main pass heard a word. Its audio is read to find the other channels'
+        // copies of the dialogue; when it cannot be read, nothing is known about those copies and every
+        // dialogue channel is muted with the centre.
+        var hasCentre = dialogueChannels.Contains("FC");
         var index = 0;
+        MonoWavReader? centre = null;
 
-        foreach (var channel in dialogueChannels)
+        if (hasCentre)
         {
-            index++;
+            perChannel["FC"] = hits.Ranges;
+            SetStatus(item, $"Analysing audio channel {++index}/{dialogueChannels.Count} (FC)");
+            centre = await ExtractChannelAsync(item, fileProgress, ffmpeg, audio, "FC", work, features, cancellationToken);
+        }
 
-            if (channel == "FC")
+        try
+        {
+            foreach (var channel in dialogueChannels.Where(channel => channel != "FC"))
             {
-                perChannel[channel] = hits.Ranges;
-                continue;
+                SetStatus(item, $"Analysing audio channel {++index}/{dialogueChannels.Count} ({channel})");
+
+                using var reader = hasCentre && centre is null
+                    ? null
+                    : await ExtractChannelAsync(item, fileProgress, ffmpeg, audio, channel, work, features, cancellationToken);
+
+                if (reader is null)
+                {
+                    // Not known what this channel carries, so it is muted with the centre.
+                    fileProgress.Drop(ChannelAudioStep(channel));
+                    fileProgress.Drop(ChannelStep(channel));
+                    ShowProgress(item, fileProgress);
+                    perChannel[channel] = hits.Ranges;
+                    continue;
+                }
+
+                // The words the main pass heard that this channel also carries, too quietly for its own
+                // transcript but loud enough to hear once the centre is muted.
+                var channelHits = centre is null ? [] : CentreSpeechHits(hits.Hits, centre, reader);
+                var carried = channelHits.Count;
+
+                try
+                {
+                    var transcript = (await TranscribeStepAsync(
+                        item, fileProgress, ChannelStep(channel), SpeechService.Plan(settings).Primary, reader.Path,
+                        features, settings, null, cancellationToken)).Result;
+
+                    channelHits.AddRange(HitCollector.FromTranscript(transcript, HitSource.English, options));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // The centre's words it carries are still muted; a word only this channel has is not known.
+                    Log.Warn($"{item.Stem}: channel {channel} could not be transcribed: {ex.Message}");
+                    fileProgress.Complete(ChannelStep(channel));
+                    ShowProgress(item, fileProgress);
+                }
+
+                channelHits.AddRange(wholeCueHits);
+
+                Log.Info($"{item.Stem}: channel {channel} carries the centre's speech at {carried} of {hits.Hits.Count} words.");
+
+                var ranges = HitCollector.BuildRanges(channelHits, probe.DurationSeconds, audio.OffsetSeconds);
+                if (ranges.Count > 0) perChannel[channel] = ranges;
             }
-
-            SetStatus(item, $"Analysing audio channel {index}/{dialogueChannels.Count} ({channel})");
-
-            var channelWav = work.File($"channel-{channel}.wav");
-            var extract = await RunFfmpegStepAsync(
-                item, fileProgress, ChannelAudioStep(channel), ffmpeg,
-                FfmpegCommands.ExtractChannel16k(item.InputPath, audio.Ordinal, channel, 2.5, channelWav),
-                StepKind.ExtractAudio, features, null, cancellationToken);
-
-            if (extract.Cancelled) throw new OperationCanceledException(cancellationToken);
-
-            if (!extract.Success)
-            {
-                Log.Warn($"{item.Stem}: channel {channel} could not be extracted: {Tail(extract.StdErr)}");
-                fileProgress.Drop(ChannelStep(channel));
-                ShowProgress(item, fileProgress);
-                continue;
-            }
-
-            PhononResult transcript;
-
-            try
-            {
-                transcript = (await TranscribeStepAsync(
-                    item, fileProgress, ChannelStep(channel), SpeechService.Plan(settings).Primary, channelWav,
-                    features, settings, null, cancellationToken)).Result;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn($"{item.Stem}: channel {channel} could not be transcribed: {ex.Message}");
-                fileProgress.Complete(ChannelStep(channel));
-                ShowProgress(item, fileProgress);
-                continue;
-            }
-
-            var channelHits = HitCollector.FromTranscript(transcript, HitSource.English, options);
-            channelHits.AddRange(wholeCueHits);
-
-            var ranges = HitCollector.BuildRanges(channelHits, probe.DurationSeconds, audio.OffsetSeconds);
-            if (ranges.Count > 0) perChannel[channel] = ranges;
+        }
+        finally
+        {
+            centre?.Dispose();
         }
 
         return perChannel;
+    }
+
+    /// <summary>One channel as a 16 kHz mono wav, opened for reading; null (and a warning) when it cannot be extracted.</summary>
+    private async Task<MonoWavReader?> ExtractChannelAsync(
+        MediaItem item, FileProgress fileProgress, string ffmpeg, AudioSelection audio, string channel, WorkFolder work,
+        StepFeatures features, CancellationToken cancellationToken)
+    {
+        var channelWav = work.File($"channel-{channel}.wav");
+        var extract = await RunFfmpegStepAsync(
+            item, fileProgress, ChannelAudioStep(channel), ffmpeg,
+            FfmpegCommands.ExtractChannel16k(item.InputPath, audio.Ordinal, channel, 2.5, channelWav),
+            StepKind.ExtractAudio, features, null, cancellationToken);
+
+        if (extract.Cancelled) throw new OperationCanceledException(cancellationToken);
+
+        if (!extract.Success)
+        {
+            Log.Warn($"{item.Stem}: channel {channel} could not be extracted: {Tail(extract.StdErr)}");
+            return null;
+        }
+
+        try
+        {
+            return new MonoWavReader(channelWav);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log.Warn($"{item.Stem}: channel {channel} could not be read: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>The hits whose words <paramref name="channel"/> carries a copy of from the centre (see <see cref="DialogueLeak"/>).</summary>
+    internal static List<Hit> CentreSpeechHits(IEnumerable<Hit> hits, MonoWavReader centre, MonoWavReader channel)
+    {
+        var carried = new List<Hit>();
+
+        foreach (var hit in hits)
+        {
+            if (hit.End <= hit.Start) continue;
+
+            var centreSamples = centre.Read(hit.Start, hit.End);
+            var channelSamples = channel.Read(hit.Start, hit.End);
+
+            if (DialogueLeak.CarriesSpeech(centreSamples, channelSamples, centre.SampleRate)) carried.Add(hit);
+        }
+
+        return carried;
     }
 
     private async Task<(List<Cue>? Cues, string Source)> LoadSubtitlesAsync(

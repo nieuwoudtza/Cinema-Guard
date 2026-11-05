@@ -54,6 +54,17 @@ public sealed partial class SettingsViewModel(SettingsService service, SpeechSer
         }
     }
 
+    public int ShowSubtitlesIndex
+    {
+        get => (int)S.ShowSubtitles;
+        set
+        {
+            if (value < 0 || value == ShowSubtitlesIndex) return;
+            S.ShowSubtitles = (ShownSubtitles)value;
+            OnPropertyChanged();
+        }
+    }
+
     public int DownmixIndex
     {
         get => (int)S.DialogueDownmix;

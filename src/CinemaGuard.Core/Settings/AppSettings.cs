@@ -8,6 +8,9 @@ public enum OutputContainer { Mp4, Mkv }
 
 public enum SubtitleOutputType { None, Full, Censored, Dual }
 
+/// <summary>Which embedded subtitle track a player shows when the video opens.</summary>
+public enum ShownSubtitles { Off, Full, Censored }
+
 public enum PhononRuntimeMode { Auto, Docker, Local }
 
 public enum DownmixMode { Plain, CenterWeighted }
@@ -18,7 +21,7 @@ public enum DownmixMode { Plain, CenterWeighted }
 /// </summary>
 public sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public bool FirstRun { get; set; } = true;
@@ -35,6 +38,13 @@ public sealed class AppSettings
     public bool CreateSubtitles { get; set; } = true;
     public SubtitleOutputType SubtitleOutput { get; set; } = SubtitleOutputType.Dual;
     public bool EmbedSubtitles { get; set; } = true;
+
+    /// <summary>
+    /// The embedded track shown when the video opens (flagged default, and in an MP4 also the flag VLC needs).
+    /// When only the other one is written, that one is shown.
+    /// </summary>
+    public ShownSubtitles ShowSubtitles { get; set; } = ShownSubtitles.Full;
+
     public string CensorCharacter { get; set; } = "*";
 
     /// <summary>The source's forced subtitle tracks (foreign lines only), masked with the filter and kept.</summary>
@@ -201,8 +211,12 @@ public sealed class AppSettings
         if (SchemaVersion < 3)
         {
             if (!RunMultilingualPass) SpeechModel = SpeechCatalog.PhononEnglishId;
-            SchemaVersion = CurrentSchemaVersion;
         }
+
+        // Version 4 added spellings to the word families (Motherfuck, Goddammit, ...).
+        if (SchemaVersion < 4) FilterCatalog.AddNewSpellings(WordsFull, WordsSingle);
+
+        SchemaVersion = CurrentSchemaVersion;
 
         if (!SpeechCatalog.IsKnownSelection(SpeechModel)) SpeechModel = SpeechCatalog.PairId;
         SpeechVariants = new Dictionary<string, string>(SpeechVariants ?? [], StringComparer.OrdinalIgnoreCase);

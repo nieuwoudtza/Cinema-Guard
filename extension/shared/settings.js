@@ -10,6 +10,9 @@
         wordsFull: catalog.defaultFull(),
         wordsSingle: catalog.defaultSingle(),
 
+        // Which catalog the lists were saved with: older lists get the spellings added since.
+        catalogVersion: catalog.VERSION,
+
         // Milliseconds added around each mute.
         pads: {
             estimatedBefore: 500, estimatedAfter: 500, // a word whose time is guessed from its place in the caption line
@@ -65,8 +68,11 @@
         for (const [key, max] of Object.entries(PAD_LIMITS)) pads[key] = milliseconds(raw.pads?.[key], DEFAULTS.pads[key], max);
 
         // The two lists are independent, as the app's two columns are; a word on both mutes the whole sentence.
-        const wordsFull = matcher.cleanEntries(Array.isArray(raw.wordsFull) ? raw.wordsFull : DEFAULTS.wordsFull);
-        const wordsSingle = matcher.cleanEntries(Array.isArray(raw.wordsSingle) ? raw.wordsSingle : DEFAULTS.wordsSingle);
+        let wordsFull = matcher.cleanEntries(Array.isArray(raw.wordsFull) ? raw.wordsFull : DEFAULTS.wordsFull);
+        let wordsSingle = matcher.cleanEntries(Array.isArray(raw.wordsSingle) ? raw.wordsSingle : DEFAULTS.wordsSingle);
+
+        if (!(Number(raw.catalogVersion) >= catalog.VERSION))
+            ({ wordsFull, wordsSingle } = catalog.addNewSpellings(wordsFull, wordsSingle));
 
         const hosts = list => [...new Set((Array.isArray(list) ? list : []).map(host => String(host).trim().toLowerCase()).filter(Boolean))];
 
@@ -74,6 +80,7 @@
             enabled: raw.enabled !== false,
             wordsFull,
             wordsSingle,
+            catalogVersion: catalog.VERSION,
             pads,
             fadeMs: milliseconds(raw.fadeMs, DEFAULTS.fadeMs, FADE_LIMIT),
             censorCharacter: isValidCensorCharacter(raw.censorCharacter) ? raw.censorCharacter : DEFAULTS.censorCharacter,
@@ -104,6 +111,7 @@
             incoming = {
                 wordsFull: incoming.WordsFull,
                 wordsSingle: incoming.WordsSingle,
+                catalogVersion: incoming.SchemaVersion >= 4 ? catalog.VERSION : 1,
                 censorCharacter: incoming.CensorCharacter,
                 fadeMs: incoming.MuteFadeMs,
                 pads: {
@@ -118,6 +126,9 @@
         const defined = object => Object.fromEntries(Object.entries(object || {}).filter(([key, value]) => value !== undefined && value !== null || key === 'showCaptions'));
         const picked = Object.fromEntries(Object.entries(defined(incoming)).filter(([key]) => known.includes(key)));
         if (Object.keys(picked).length === 0) throw new Error('No Cinema Guard settings were found in it.');
+
+        // Lists exported before the catalog had a version get the spellings added since.
+        if (('wordsFull' in picked || 'wordsSingle' in picked) && !('catalogVersion' in picked)) picked.catalogVersion = 1;
 
         const base = normalise(current);
         return normalise({ ...base, ...picked, pads: { ...base.pads, ...defined(incoming.pads) } });

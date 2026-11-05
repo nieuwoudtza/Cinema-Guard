@@ -254,7 +254,12 @@ status of everything; Settings holds overrides for every path.
    as chosen in Settings (Keep is the default).
 
 Vocals-only mode splits the 5.1/7.1 track, analyses each dialogue channel separately, silences only
-the channels that carry the word, and joins the channels back in one encode.
+the channels that carry the word, and joins the channels back in one encode. The centre is muted at
+every hit. Each other dialogue channel is muted where its own transcript hears a word, and also where
+it carries a copy of the centre's speech, panned or as the room's reverb (compared in the speech band
+at delays up to 50 ms, at -30 dB or louder against the centre): films mix dialogue into the front and
+surround channels too, often too quietly for that channel's transcript to pick out but loud enough to
+hear once the centre is silent.
 
 ### Where things live
 

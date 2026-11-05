@@ -41,7 +41,48 @@
         CHRIST: ['CHRIST', 'CHRISTS', "CHRIST'S", 'CHRISSAKE', 'CHRISSAKES', 'CHRISTSAKE', 'CHRISTSAKES'],
     };
 
-    const family = root => FAMILIES[root] || [root];
+    // Spellings the families gained after the app's first lists (the app's settings version 4), such as
+    // "Motherfuck!" and "Goddammit". Saved settings from before get them on every list with the root word.
+    const ADDED = {
+        ASS: ['BADASS', 'BADASSES', 'DUMBASS', 'DUMBASSES', 'FATASS', 'HARDASS', 'JACKASS', 'JACKASSES', 'SMARTASS', 'SMARTASSES'],
+        BITCH: ['BITCHED', 'SONOFABITCH', 'SONUVABITCH'],
+        BULLSHIT: ['BULLSHITS', 'BULLSHITTED', 'BULLSHITTER', 'BULLSHITTERS', 'BULLSHITTING'],
+        COCK: ['COCKSUCKING'],
+        DAMN: ['DAMMIT', 'DAMNED', 'DAMNIT'],
+        DICK: ['DICKFACE', 'DICKWAD', 'DICKWADS'],
+        FUCK: [
+            'DUMBFUCKS', 'FUCKA', 'FUCKALL', 'FUCKAS', 'FUCKTON', 'FUCKTONS', 'FUCKWADS', 'MINDFUCK',
+            'MINDFUCKED', 'MINDFUCKING', 'MINDFUCKS',
+        ],
+        GODDAMN: ['GODDAM', 'GODDAMMIT', 'GODDAMNED', 'GODDAMNIT'],
+        MOTHERFUCKER: [
+            'MOTHERFUCK', 'MOTHERFUCKA', 'MOTHERFUCKAS', 'MOTHERFUCKED', 'MOTHERFUCKS', 'MOTHAFUCKA',
+            'MOTHAFUCKAS', 'MOTHAFUCKER', 'MOTHAFUCKERS', 'MUTHAFUCKA', 'MUTHAFUCKAS', 'MUTHAFUCKER',
+            'MUTHAFUCKERS', 'MUTHERFUCKER', 'MUTHERFUCKERS',
+        ],
+        SHIT: [
+            'APESHIT', 'BATSHIT', 'CHICKENSHIT', 'CHICKENSHITS', 'DIPSHIT', 'DIPSHITS', 'HORSESHIT', 'SHITE',
+            'SHITES', 'SHITLESS', 'SHITTED', 'SHITTER', 'SHITTERS', 'SHITTIN', 'SHITTING',
+        ],
+    };
+
+    // The catalog version saved with the settings; ADDED came with version 2.
+    const VERSION = 2;
+
+    const family = root => [...(FAMILIES[root] || [root]), ...(ADDED[root] || [])];
+
+    // Settings saved before ADDED: a list with a family's root word gets its new spellings, unless on a list already.
+    function addNewSpellings(wordsFull, wordsSingle) {
+        const full = [...wordsFull];
+        const single = [...wordsSingle];
+        for (const [root, added] of Object.entries(ADDED)) {
+            for (const words of [full, single]) {
+                if (!words.includes(root)) continue;
+                for (const word of added) if (!full.includes(word) && !single.includes(word)) words.push(word);
+            }
+        }
+        return { wordsFull: full, wordsSingle: single };
+    }
     const unique = list => [...new Set(list)];
 
     // The app's rule for showing a word: one vowel replaced with '*', the first after the first letter.
@@ -79,7 +120,9 @@
 
     CG.catalog = {
         ROOTS,
+        VERSION,
         family,
+        addNewSpellings,
         familyState,
         customWords,
         displayName,

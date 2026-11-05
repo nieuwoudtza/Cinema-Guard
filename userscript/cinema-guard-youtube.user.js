@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Cinema Guard for YouTube
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-04.6
+// @version      2026-11-05.1
 // @description  Mutes YouTube videos while swearing is spoken, using the video's captions and Cinema Guard's word lists.
 // @author       nieuwoudtza
 // @match        https://www.youtube.com/*
@@ -35,8 +35,13 @@
             'FUCKOFF', 'FUCKOFFS', 'FUCKS', 'FUCKSAKE', 'FUCKSSAKE', 'FUCKSTICK', 'FUCKSTICKS', 'FUCKTARD',
             'FUCKTARDS', 'FUCKUP', 'FUCKUPS', 'FUCKWAD', 'FUCKWIT', 'FUCKWITS', 'SKULLFUCKED', 'SKULLFUCKING',
             'UNFUCK', 'UNFUCKED', 'UNFUCKING', 'UNFUCKS',
+            'DUMBFUCKS', 'FUCKA', 'FUCKALL', 'FUCKAS', 'FUCKTON', 'FUCKTONS', 'FUCKWADS', 'MINDFUCK', 'MINDFUCKED',
+            'MINDFUCKING', 'MINDFUCKS',
             'CUNT', 'CUNTS', 'CUNTISH', 'CUNTFACE',
             'MOTHERFUCKER', 'MOTHERFUCKERIN', 'MOTHERFUCKERING', 'MOTHERFUCKERS', 'MOTHERFUCKING', 'MOTHERFUCKIN',
+            'MOTHERFUCK', 'MOTHERFUCKA', 'MOTHERFUCKAS', 'MOTHERFUCKED', 'MOTHERFUCKS', 'MOTHAFUCKA', 'MOTHAFUCKAS',
+            'MOTHAFUCKER', 'MOTHAFUCKERS', 'MUTHAFUCKA', 'MUTHAFUCKAS', 'MUTHAFUCKER', 'MUTHAFUCKERS', 'MUTHERFUCKER',
+            'MUTHERFUCKERS',
             'PUSSY', 'PUSSIES',
             'GOD', 'HOLY SHIT',
         ],

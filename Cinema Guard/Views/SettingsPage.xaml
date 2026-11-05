@@ -104,6 +104,14 @@
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.S.EmbedSubtitles, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                             </controls:SettingRow>
 
+                            <controls:SettingRow Header="Show subtitles when the video opens" Description="The embedded track a player (VLC included) turns on by itself. When only the other track is written, that one is shown.">
+                                <ComboBox MinWidth="150" SelectedIndex="{x:Bind ViewModel.ShowSubtitlesIndex, Mode=TwoWay}">
+                                    <ComboBoxItem Content="Off" />
+                                    <ComboBoxItem Content="Full" />
+                                    <ComboBoxItem Content="Censored" />
+                                </ComboBox>
+                            </controls:SettingRow>
+
                             <controls:SettingRow Header="Censor character" Description="One symbol, used to mask each letter of the word. A space leaves the word blank.">
                                 <TextBox Width="64" MaxLength="1" Text="{x:Bind ViewModel.S.CensorCharacter, Mode=TwoWay}" />
                             </controls:SettingRow>

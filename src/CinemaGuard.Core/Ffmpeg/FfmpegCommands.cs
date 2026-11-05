@@ -5,8 +5,11 @@ using CinemaGuard.Core.Settings;
 
 namespace CinemaGuard.Core.Ffmpeg;
 
-/// <summary>A subtitle file to embed. <paramref name="Forced"/>: the source's forced track, masked, shown only for foreign lines.</summary>
-public sealed record SubtitleInput(string Path, string Title, string Language, bool Forced = false);
+/// <summary>
+/// A subtitle file to embed. <paramref name="Forced"/>: the source's forced track, masked, shown only for foreign lines.
+/// <paramref name="Shown"/>: the track a player shows when the video opens.
+/// </summary>
+public sealed record SubtitleInput(string Path, string Title, string Language, bool Forced = false, bool Shown = false);
 
 public sealed record EncodeRequest
 {
@@ -45,6 +48,9 @@ public sealed record EncodeRequest
     public int ExpectedAudioStreams => 1 + (AddsOriginalAudio ? 1 : 0) + (IsAudioFile ? 0 : ExtraAudio.Count);
 
     public int ExpectedSubtitleStreams => IsAudioFile ? 0 : Subtitles.Count + ExtraSubtitles.Count;
+
+    /// <summary>The subtitle track shown when the video opens, as its place among the output's subtitle tracks; -1 for none.</summary>
+    public int ShownSubtitle => IsAudioFile ? -1 : Subtitles.ToList().FindIndex(subtitle => subtitle.Shown && !subtitle.Forced);
 }
 
 /// <summary>
@@ -308,17 +314,9 @@ public static class FfmpegCommands
             arguments.Add($"language={subtitles[i].Language}");
         }
 
-        // The first full track (Full, or Censored when it is the only one) is the one to show. A forced
-        // track is flagged forced, so players show it by themselves for the foreign lines.
-        var defaultSubtitle = -1;
-        for (var i = 0; i < subtitles.Count; i++)
-        {
-            if (!subtitles[i].Forced)
-            {
-                defaultSubtitle = i;
-                break;
-            }
-        }
+        // The track chosen in Settings is the one to show (an MP4 also needs Mp4SubtitleFlags for VLC). A
+        // forced track is flagged forced, so players show it by themselves for the foreign lines.
+        var defaultSubtitle = request.ShownSubtitle;
 
         for (var i = 0; i < subtitles.Count; i++)
         {

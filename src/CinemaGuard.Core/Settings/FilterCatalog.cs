@@ -13,49 +13,109 @@ public static class FilterCatalog
         "CUNT", "DICKHEAD", "COCK", "DICK", "BULLSHIT", "MOTHERFUCKER", "PUSSY", "ASSHOLE", "ASS",
     ];
 
-    public static IReadOnlyList<string> Associated(string word) => word.ToUpperInvariant() switch
+    public static IReadOnlyList<string> Associated(string word)
     {
-        "ASS" => ["ASS", "ASSES", "ARSE", "ARSES"],
-        "ASSHOLE" => ["ASSHOLE", "ASSHOLES"],
-        "BASTARD" => ["BASTARD", "BASTARDS"],
-        "BITCH" =>
+        var root = word.ToUpperInvariant();
+        IReadOnlyList<string> family = root switch
+        {
+            "ASS" => ["ASS", "ASSES", "ARSE", "ARSES"],
+            "ASSHOLE" => ["ASSHOLE", "ASSHOLES"],
+            "BASTARD" => ["BASTARD", "BASTARDS"],
+            "BITCH" =>
+            [
+                "BITCH", "BITCHASS", "BITCHES", "BITCHFACE", "BITCHIN", "BITCHING", "BITCHY",
+            ],
+            "COCK" => ["COCK", "COCKS", "COCKSUCKER", "COCKSUCKERS"],
+            "CUNT" => ["CUNT", "CUNTS", "CUNTISH", "CUNTFACE"],
+            "DICK" => ["DICK", "DICKS", "DICKING", "DICKISH", "DICKLESS"],
+            "DICKHEAD" => ["DICKHEAD", "DICKHEADS"],
+            "FUCK" =>
+            [
+                "BUMFUCK", "CLUSTERFUCK", "CLUSTERFUCKS", "DUMBFUCK", "FUCK", "FUCKABLE", "FUCKBOI",
+                "FUCKBOIS", "FUCKBOY", "FUCKBOYS", "FUCKED", "FUCKEDUP", "FUCKED-UP", "FUCKER",
+                "FUCKERS", "FUCKERY", "FUCKFACE", "FUCKFACES", "FUCKFEST", "FUCKFESTS", "FUCKGIRL",
+                "FUCKGIRLS", "FUCKHEAD", "FUCKHEADS", "FUCKHOLE", "FUCKHOLES", "FUCKIN", "FUCKING",
+                "FUCKITY", "FUCKNUT", "FUCKNUTS", "FUCKNUTTED", "FUCKNUTTING", "FUCKOFF", "FUCKOFFS",
+                "FUCKS", "FUCKSAKE", "FUCKSSAKE", "FUCKSTICK", "FUCKSTICKS", "FUCKTARD", "FUCKTARDS",
+                "FUCKUP", "FUCKUPS", "FUCKWAD", "FUCKWIT", "FUCKWITS", "SKULLFUCKED", "SKULLFUCKING",
+                "UNFUCK", "UNFUCKED", "UNFUCKING", "UNFUCKS",
+            ],
+            "MOTHERFUCKER" =>
+            [
+                "MOTHERFUCKER", "MOTHERFUCKERIN", "MOTHERFUCKERING", "MOTHERFUCKERS", "MOTHERFUCKING",
+                "MOTHERFUCKIN",
+            ],
+            "PUSSY" => ["PUSSY", "PUSSIES"],
+            "SHIT" =>
+            [
+                "SHIT", "SHIT-EATER", "SHIT-EATERS", "SHIT-EATING", "SHITBAG", "SHITBAGS", "SHITCAN",
+                "SHITCANNED", "SHITEATER", "SHITEATERS", "SHITEATING", "SHITFACE", "SHITFACED",
+                "SHITFACING", "SHITHEAD", "SHITHEADS", "SHITHOLE", "SHITHOLES", "SHITLOAD", "SHITLOADS",
+                "SHITPILE", "SHITPILES", "SHITPOST", "SHITPOSTER", "SHITPOSTERS", "SHITPOSTING", "SHITS",
+                "SHITSHOW", "SHITSHOWS", "SHITSTAIN", "SHITSTAINS", "SHITSTORM", "SHITSTORMS", "SHITTIER",
+                "SHITTIEST", "SHITTY",
+            ],
+            "JESUS" => ["JEESUZ", "JEEZUS", "JEEZUSS", "JEEZUZ", "JESUS", "JESUS'S", "JESUSES"],
+            "CHRIST" => ["CHRIST", "CHRISTS", "CHRIST'S", "CHRISSAKE", "CHRISSAKES", "CHRISTSAKE", "CHRISTSAKES"],
+            _ => [root],
+        };
+
+        return AddedInVersion4.TryGetValue(root, out var added) ? [.. family, .. added] : family;
+    }
+
+    /// <summary>
+    /// Spellings a family gained after the old app's lists (settings version 4): forms subtitles use that the
+    /// lists missed, such as "Motherfuck!" and "Goddammit". Settings saved before then get them on every list
+    /// that has the family's root word (see <see cref="AddNewSpellings"/>).
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string[]> AddedInVersion4 { get; } = new Dictionary<string, string[]>
+    {
+        ["ASS"] =
         [
-            "BITCH", "BITCHASS", "BITCHES", "BITCHFACE", "BITCHIN", "BITCHING", "BITCHY",
+            "BADASS", "BADASSES", "DUMBASS", "DUMBASSES", "FATASS", "HARDASS", "JACKASS", "JACKASSES",
+            "SMARTASS", "SMARTASSES",
         ],
-        "COCK" => ["COCK", "COCKS", "COCKSUCKER", "COCKSUCKERS"],
-        "CUNT" => ["CUNT", "CUNTS", "CUNTISH", "CUNTFACE"],
-        "DICK" => ["DICK", "DICKS", "DICKING", "DICKISH", "DICKLESS"],
-        "DICKHEAD" => ["DICKHEAD", "DICKHEADS"],
-        "FUCK" =>
+        ["BITCH"] = ["BITCHED", "SONOFABITCH", "SONUVABITCH"],
+        ["BULLSHIT"] = ["BULLSHITS", "BULLSHITTED", "BULLSHITTER", "BULLSHITTERS", "BULLSHITTING"],
+        ["COCK"] = ["COCKSUCKING"],
+        ["DAMN"] = ["DAMMIT", "DAMNED", "DAMNIT"],
+        ["DICK"] = ["DICKFACE", "DICKWAD", "DICKWADS"],
+        ["FUCK"] =
         [
-            "BUMFUCK", "CLUSTERFUCK", "CLUSTERFUCKS", "DUMBFUCK", "FUCK", "FUCKABLE", "FUCKBOI",
-            "FUCKBOIS", "FUCKBOY", "FUCKBOYS", "FUCKED", "FUCKEDUP", "FUCKED-UP", "FUCKER",
-            "FUCKERS", "FUCKERY", "FUCKFACE", "FUCKFACES", "FUCKFEST", "FUCKFESTS", "FUCKGIRL",
-            "FUCKGIRLS", "FUCKHEAD", "FUCKHEADS", "FUCKHOLE", "FUCKHOLES", "FUCKIN", "FUCKING",
-            "FUCKITY", "FUCKNUT", "FUCKNUTS", "FUCKNUTTED", "FUCKNUTTING", "FUCKOFF", "FUCKOFFS",
-            "FUCKS", "FUCKSAKE", "FUCKSSAKE", "FUCKSTICK", "FUCKSTICKS", "FUCKTARD", "FUCKTARDS",
-            "FUCKUP", "FUCKUPS", "FUCKWAD", "FUCKWIT", "FUCKWITS", "SKULLFUCKED", "SKULLFUCKING",
-            "UNFUCK", "UNFUCKED", "UNFUCKING", "UNFUCKS",
+            "DUMBFUCKS", "FUCKA", "FUCKALL", "FUCKAS", "FUCKTON", "FUCKTONS", "FUCKWADS", "MINDFUCK",
+            "MINDFUCKED", "MINDFUCKING", "MINDFUCKS",
         ],
-        "MOTHERFUCKER" =>
+        ["GODDAMN"] = ["GODDAM", "GODDAMMIT", "GODDAMNED", "GODDAMNIT"],
+        ["MOTHERFUCKER"] =
         [
-            "MOTHERFUCKER", "MOTHERFUCKERIN", "MOTHERFUCKERING", "MOTHERFUCKERS", "MOTHERFUCKING",
-            "MOTHERFUCKIN",
+            "MOTHERFUCK", "MOTHERFUCKA", "MOTHERFUCKAS", "MOTHERFUCKED", "MOTHERFUCKS", "MOTHAFUCKA",
+            "MOTHAFUCKAS", "MOTHAFUCKER", "MOTHAFUCKERS", "MUTHAFUCKA", "MUTHAFUCKAS", "MUTHAFUCKER",
+            "MUTHAFUCKERS", "MUTHERFUCKER", "MUTHERFUCKERS",
         ],
-        "PUSSY" => ["PUSSY", "PUSSIES"],
-        "SHIT" =>
+        ["SHIT"] =
         [
-            "SHIT", "SHIT-EATER", "SHIT-EATERS", "SHIT-EATING", "SHITBAG", "SHITBAGS", "SHITCAN",
-            "SHITCANNED", "SHITEATER", "SHITEATERS", "SHITEATING", "SHITFACE", "SHITFACED",
-            "SHITFACING", "SHITHEAD", "SHITHEADS", "SHITHOLE", "SHITHOLES", "SHITLOAD", "SHITLOADS",
-            "SHITPILE", "SHITPILES", "SHITPOST", "SHITPOSTER", "SHITPOSTERS", "SHITPOSTING", "SHITS",
-            "SHITSHOW", "SHITSHOWS", "SHITSTAIN", "SHITSTAINS", "SHITSTORM", "SHITSTORMS", "SHITTIER",
-            "SHITTIEST", "SHITTY",
+            "APESHIT", "BATSHIT", "CHICKENSHIT", "CHICKENSHITS", "DIPSHIT", "DIPSHITS", "HORSESHIT", "SHITE",
+            "SHITES", "SHITLESS", "SHITTED", "SHITTER", "SHITTERS", "SHITTIN", "SHITTING",
         ],
-        "JESUS" => ["JEESUZ", "JEEZUS", "JEEZUSS", "JEEZUZ", "JESUS", "JESUS'S", "JESUSES"],
-        "CHRIST" => ["CHRIST", "CHRISTS", "CHRIST'S", "CHRISSAKE", "CHRISSAKES", "CHRISTSAKE", "CHRISTSAKES"],
-        _ => [word.ToUpperInvariant()],
     };
+
+    /// <summary>
+    /// Settings from before version 4: a list that has a family's root word gets the spellings added since.
+    /// A spelling already on either list stays where it is.
+    /// </summary>
+    internal static void AddNewSpellings(List<string> wordsFull, List<string> wordsSingle)
+    {
+        foreach (var (root, added) in AddedInVersion4)
+        {
+            foreach (var words in new[] { wordsFull, wordsSingle })
+            {
+                if (!words.Contains(root)) continue;
+
+                foreach (var word in added)
+                    if (!wordsFull.Contains(word) && !wordsSingle.Contains(word)) words.Add(word);
+            }
+        }
+    }
 
     /// <summary>The old app's first-run defaults: JESUS/CHRIST mute the whole sentence.</summary>
     public static List<string> DefaultWordsFull() =>

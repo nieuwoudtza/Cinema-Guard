@@ -34,6 +34,43 @@ public class SettingsTests
     }
 
     [Fact]
+    public void SpellingsSubtitlesUseAreInTheFamilies()
+    {
+        var settings = AppSettings.CreateDefault();
+
+        var matches = SwearMatcher.Find("Motherfuck! Shit!", settings.WordsSingle);
+        Assert.Equal(["MOTHERFUCK"], matches.Select(m => m.Entry));
+
+        Assert.Contains("GODDAMMIT", FilterCatalog.Associated("GODDAMN"));
+        Assert.Contains("DIPSHIT", FilterCatalog.Associated("SHIT"));
+        Assert.Equal(FilterCatalog.Associated("FUCK").Count, FilterCatalog.Associated("FUCK").Distinct().Count());
+    }
+
+    [Fact]
+    public void SettingsFromBeforeVersion4GetTheNewSpellings()
+    {
+        var old = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(
+            """{ "SchemaVersion": 3, "WordsFull": ["GODDAMN"], "WordsSingle": ["MOTHERFUCKER", "FUCK", "DIPSHIT"] }""",
+            AppSettings.JsonOptions)!;
+        old.Normalise();
+
+        Assert.Equal(AppSettings.CurrentSchemaVersion, old.SchemaVersion);
+        Assert.Contains("MOTHERFUCK", old.WordsSingle);
+        Assert.Contains("MINDFUCK", old.WordsSingle);
+        Assert.Contains("GODDAMMIT", old.WordsFull);
+        Assert.DoesNotContain("GODDAMMIT", old.WordsSingle);
+
+        // A spelling already on a list stays put, and families without their root word are left alone.
+        Assert.DoesNotContain("DIPSHIT", old.WordsFull);
+        Assert.DoesNotContain("BATSHIT", old.WordsSingle);
+
+        // Once saved as version 4, a spelling the user took off stays off.
+        var current = new AppSettings { WordsSingle = ["MOTHERFUCKER"] };
+        current.Normalise();
+        Assert.Equal(["MOTHERFUCKER"], current.WordsSingle);
+    }
+
+    [Fact]
     public void FilterFamiliesToggleEveryAssociatedWord()
     {
         var words = new List<string>();
