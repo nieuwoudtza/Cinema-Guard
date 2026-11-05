@@ -27,7 +27,15 @@ public sealed record HitCollectorOptions(
         settings.LinePadAfterMs);
 }
 
-public sealed record HitSet(List<Hit> Hits, List<TimeRange> Ranges, SyncFit Fit, WordAlignment? Alignment = null)
+/// <param name="Trimmed">Transcript words cut back before they were used; see <see cref="StretchedWords"/>.</param>
+/// <param name="CaptionFit">The fit that placed the captions for <see cref="StretchedWords"/>, even when <paramref name="Fit"/> is not used.</param>
+public sealed record HitSet(
+    List<Hit> Hits,
+    List<TimeRange> Ranges,
+    SyncFit Fit,
+    WordAlignment? Alignment = null,
+    IReadOnlyList<TrimmedWord>? Trimmed = null,
+    SyncFit? CaptionFit = null)
 {
     public int HitCount => Hits.Count;
 
@@ -63,8 +71,27 @@ public static class HitCollector
         var hits = new List<Hit>();
         var transcriptHits = new List<Hit>();
 
-        if (english is not null) transcriptHits.AddRange(FromTranscript(english, HitSource.English, options));
-        if (multilingual is not null) transcriptHits.AddRange(FromTranscript(multilingual, HitSource.Multilingual, options));
+        // Fitted even when the subtitle hits are not moved by it: it tells whether the captions can show where a
+        // stretched word really ends. Read from word starts, which a stretch leaves alone.
+        var captionFit = english is not null && subtitleCues is { Count: > 0 }
+            ? SubtitleAligner.Fit(subtitleCues, english)
+            : SyncFit.Identity;
+
+        var trimmed = new List<TrimmedWord>();
+
+        if (english is not null)
+        {
+            (english, var cut) = StretchedWords.Trim(english, HitSource.English, subtitleCues, captionFit);
+            trimmed.AddRange(cut);
+            transcriptHits.AddRange(FromTranscript(english, HitSource.English, options));
+        }
+
+        if (multilingual is not null)
+        {
+            (multilingual, var cut) = StretchedWords.Trim(multilingual, HitSource.Multilingual, subtitleCues, captionFit);
+            trimmed.AddRange(cut);
+            transcriptHits.AddRange(FromTranscript(multilingual, HitSource.Multilingual, options));
+        }
 
         hits.AddRange(transcriptHits);
 
@@ -73,7 +100,7 @@ public static class HitCollector
 
         if (alignSubtitles && english is not null && subtitleCues is { Count: > 0 })
         {
-            fit = SubtitleAligner.Fit(subtitleCues, english);
+            fit = captionFit;
             alignment = WordAligner.Align(subtitleCues, english);
         }
 
@@ -84,7 +111,7 @@ public static class HitCollector
             hits.AddRange(FromLegacyOneWord(legacyOneWordCues, options));
 
         var ranges = BuildRanges(hits, duration, audioOffset);
-        return new HitSet(hits, ranges, fit, alignment);
+        return new HitSet(hits, ranges, fit, alignment, trimmed, captionFit);
     }
 
     public static List<Hit> FromTranscript(PhononResult transcript, HitSource source, HitCollectorOptions options)

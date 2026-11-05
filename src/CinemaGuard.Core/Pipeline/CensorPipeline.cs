@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using CinemaGuard.Core.Ffmpeg;
 using CinemaGuard.Core.Intervals;
 using CinemaGuard.Core.Logging;
@@ -235,6 +236,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         item.Hits = hits;
         item.SyncFit = hits.Fit;
+
+        foreach (var word in hits.Trimmed ?? [])
+            Log.Info(string.Create(CultureInfo.InvariantCulture,
+                $"{item.Stem}: {word.Source} word \"{word.Text}\" at {word.Start:0.000} s ran {word.End - word.Start:0.000} s, to {word.End:0.000}; cut to end at {word.TrimmedEnd:0.000} ({word.Reason})."));
 
         if (settings.SkipMediaNoSwearing && hits.Ranges.Count == 0)
         {
@@ -782,7 +787,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                         item, fileProgress, ChannelStep(channel), SpeechService.Plan(settings).Primary, reader.Path,
                         features, settings, null, cancellationToken)).Result;
 
-                    channelHits.AddRange(HitCollector.FromTranscript(transcript, HitSource.English, options));
+                    var (trimmed, _) = StretchedWords.Trim(transcript, HitSource.English, subtitleCues, hits.CaptionFit ?? hits.Fit);
+                    channelHits.AddRange(HitCollector.FromTranscript(trimmed, HitSource.English, options));
                 }
                 catch (OperationCanceledException)
                 {

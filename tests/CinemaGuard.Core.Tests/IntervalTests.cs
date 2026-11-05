@@ -227,3 +227,169 @@ public class HitCollectorTests
         Assert.Single(set.Ranges);
     }
 }
+
+/// <summary>Issue #2: Phonon stretched a word into the gap before the next line, and the mute went with it.</summary>
+public class StretchedWordTests
+{
+    // Petrus's settings: word padding 100 / 95 ms, estimated padding 500 / 500 ms.
+    private static HitCollectorOptions Options(params string[] single) => new([], single, 500, 500, 100, 95);
+
+    private static readonly SyncFit InSync = new(true, 1.0, 0.0, 100, 0.1);
+
+    private static PhononWord Word(double start, double end, string text) => new() { Start = start, End = end, Text = text };
+
+    private static Cue Caption(double start, double end, string text) => new() { StartSeconds = start, EndSeconds = end, Text = text };
+
+    /// <summary>A minute of lines heard as written, so the subtitles are shown to line up with the speech.</summary>
+    private static (List<Cue> Cues, List<PhononWord> Words) InSyncFilm()
+    {
+        var cues = new List<Cue>();
+        var words = new List<PhononWord>();
+
+        for (var i = 0; i < 60; i++)
+        {
+            var start = i * 6.0;
+            var token = $"WORD{i % 20:D2}";
+            cues.Add(Caption(start, start + 2, $"{token} TEST"));
+
+            var spoken = start + 6 / 2.0 / 11 * 2;
+            words.Add(Word(spoken, spoken + 0.4, token));
+            words.Add(Word(spoken + 0.5, spoken + 0.9, "test"));
+        }
+
+        return (cues, words);
+    }
+
+    [Fact]
+    public void ModelCitizenGodIsCutBackToItsCaption()
+    {
+        var (cues, words) = InSyncFilm();
+        cues.Add(Caption(4151.731, 4153.024, "Oh, my God."));
+        cues.Add(Caption(4166.162, 4167.330, "Oh, my God."));
+
+        var english = new PhononResult
+        {
+            Words = [.. words, Word(4151.90, 4152.10, "Oh,"), Word(4152.10, 4152.43, "my"), Word(4152.43, 4166.19, "god."),
+                Word(4166.19, 4166.40, "Oh,"), Word(4166.40, 4166.60, "my"), Word(4166.60, 4167.00, "God.")],
+        };
+        var multilingual = new PhononResult
+        {
+            Words = [Word(4151.90, 4152.10, "Oh,"), Word(4152.10, 4152.42, "my"), Word(4152.42, 4166.18, "god."),
+                Word(4166.18, 4166.40, "Oh,"), Word(4166.40, 4166.60, "my"), Word(4166.60, 4167.00, "God.")],
+        };
+
+        var set = HitCollector.Collect(Options("GOD"), 5609.642, 0, english, multilingual, cues, null, alignSubtitles: true);
+
+        Assert.True(set.Fit.Accepted);
+
+        // Was 4152.320-4166.285 (13.965 s), across the gap to the next line.
+        var first = set.Ranges.Single(r => r.Start < 4160);
+        Assert.Equal(4152.320, first.Start, 3);
+        Assert.Equal(4153.024 + 0.095, first.End, 3);
+
+        // The next "God." keeps its own short mute.
+        var next = set.Ranges.Single(r => r.Start > 4160);
+        Assert.Equal(4166.500, next.Start, 3);
+        Assert.Equal(4167.095, next.End, 3);
+
+        Assert.Equal(2, set.Trimmed!.Count);
+        Assert.All(set.Trimmed, t => Assert.Equal(4153.024, t.TrimmedEnd, 3));
+        Assert.Contains(set.Trimmed, t => t.Source == HitSource.Multilingual && t.End == 4166.18);
+    }
+
+    [Fact]
+    public void YourMotherFuckNoLongerReachesTheNextFuck()
+    {
+        var (cues, words) = InSyncFilm();
+        cues.Add(Caption(2047.125, 2049.833, "Oh, fuck!"));
+        cues.Add(Caption(2055.958, 2057.000, "Fuck."));
+
+        var english = new PhononResult
+        {
+            Words = [.. words, Word(2048.500, 2048.811, "Oh,"), Word(2048.811, 2049.300, "fuck!"), Word(2056.200, 2056.865, "Fuck.")],
+        };
+        var multilingual = new PhononResult
+        {
+            Words = [Word(2048.500, 2049.585, "Oh,"), Word(2049.585, 2056.145, "fuck."), Word(2056.145, 2056.600, "Fuck.")],
+        };
+
+        var set = HitCollector.Collect(Options("FUCK"), 6731.925, 0, english, multilingual, cues, null, alignSubtitles: true);
+
+        // Was one 8.249 s range, 2048.711-2056.960. Now nothing is muted between the two lines.
+        var line = set.Ranges.Where(r => r.Start is > 2000 and < 2050).ToList();
+        Assert.Equal(2048.711, line.Min(r => r.Start), 3);
+        // The word starts 0.25 s before its caption ends, so it keeps the shortest 0.3 s: 2049.585 + 0.3 + 0.095 pad.
+        Assert.Equal(2049.980, line.Max(r => r.End), 3);
+
+        var next = set.Ranges.Single(r => r.End > 2050);
+        Assert.Equal(2056.045, next.Start, 3);
+        Assert.Equal(2056.960, next.End, 3);
+
+        var cut = Assert.Single(set.Trimmed!);
+        Assert.Equal(HitSource.Multilingual, cut.Source);
+    }
+
+    [Theory]
+    [InlineData("GOD", 1.35)]
+    [InlineData("fucking", 1.70)]
+    [InlineData("motherfucker!", 2.40)]
+    public void TheLongestPlausibleWordGrowsWithItsSyllables(string word, double seconds) =>
+        Assert.Equal(seconds, StretchedWords.LongestPlausible(word), 3);
+
+    [Fact]
+    public void ALongWordThatEndsWithinItsCaptionKeepsItsLength()
+    {
+        // A drawn-out shout, 3 s, inside a 4 s line.
+        var transcript = new PhononResult { Words = [Word(10.5, 13.5, "fuuuck"), Word(13.5, 14, "you")] };
+
+        var (result, trimmed) = StretchedWords.Trim(transcript, HitSource.English, [Caption(10, 13.4, "Fuuuck you")], InSync);
+
+        Assert.Same(transcript, result);
+        Assert.Empty(trimmed);
+    }
+
+    [Fact]
+    public void AWordThatStartsJustAfterItsCaptionEndedKeepsAFewHundredMilliseconds()
+    {
+        var transcript = new PhononResult { Words = [Word(10.2, 20, "god")] };
+
+        var (result, _) = StretchedWords.Trim(transcript, HitSource.English, [Caption(9, 10, "Oh my god")], InSync);
+
+        Assert.Equal(10.5, result.Words[0].End, 3);
+    }
+
+    [Fact]
+    public void WithNoCaptionAWordThatRunsIntoTheNextIsCappedAtTheLongestPlausible()
+    {
+        var transcript = new PhononResult { Words = [Word(10, 20, "god"), Word(20, 20.3, "help")] };
+
+        var (result, trimmed) = StretchedWords.Trim(transcript, HitSource.English, null, SyncFit.Identity);
+
+        Assert.Equal(11.35, result.Words[0].End, 3);
+        Assert.Equal(20.3, result.Words[1].End, 3);
+        Assert.Equal(20, Assert.Single(trimmed).End, 3);
+        Assert.Equal(20, transcript.Words[0].End, 3); // the saved transcript is not changed
+    }
+
+    [Fact]
+    public void WithNoCaptionALongWordFollowedBySilenceIsLeftAlone()
+    {
+        var transcript = new PhononResult { Words = [Word(10, 13, "god"), Word(25, 25.3, "help")] };
+
+        var (result, trimmed) = StretchedWords.Trim(transcript, HitSource.English, null, SyncFit.Identity);
+
+        Assert.Same(transcript, result);
+        Assert.Empty(trimmed);
+    }
+
+    [Fact]
+    public void CaptionsThatWereNotShownToLineUpAreNotEvidence()
+    {
+        // The fit was not accepted: the caption ending at 11 s may belong to another moment of the film.
+        var transcript = new PhononResult { Words = [Word(10, 20, "god"), Word(20, 20.3, "help")] };
+
+        var (result, _) = StretchedWords.Trim(transcript, HitSource.English, [Caption(10, 11, "god")], SyncFit.Identity);
+
+        Assert.Equal(11.35, result.Words[0].End, 3);
+    }
+}

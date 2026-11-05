@@ -241,7 +241,11 @@ status of everything; Settings holds overrides for every path.
    language, never a forced or commentary track).
 2. Subtitles: your file, a sidecar, an embedded text track, or the speech model.
 3. Transcribe with the chosen model (or the Phonon pair). Engines stay loaded for the whole queue.
-4. Filter hits: words from the transcript(s) plus the subtitle file. Subtitle timings are first
+4. Filter hits: words from the transcript(s) plus the subtitle file. A transcript word longer than it
+   could be spoken (1 s plus 0.35 s per syllable) is cut back to the end of its caption; with no
+   caption, only one that runs right up to the next word is cut, to that length. The speech model
+   sometimes stretches the last word before a pause up to the next word, which would mute the whole
+   gap. Subtitle timings are first
    fitted to the transcript, which fixes downloads timed for 24.000 fps on a 23.976 fps film. The
    subtitle file is then matched to the transcript word by word (shared phrases as anchors,
    Needleman–Wunsch between them, ported from Petrus Vermaak's SRT Mapper), so a word only the

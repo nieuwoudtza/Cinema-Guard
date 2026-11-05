@@ -110,7 +110,8 @@ public sealed class WordAlignment
         return new AlignedSpan(wordStart, wordStart + span * own / total, gapStart, gapEnd, Exact: gapUnits == last - first + 1);
     }
 
-    private static int Syllables(string key)
+    /// <summary>Vowel groups in an upper-case key, a silent final E dropped; at least one.</summary>
+    internal static int Syllables(string key)
     {
         var word = key.EndsWith('E') ? key[..^1] : key;
         var groups = 0;
