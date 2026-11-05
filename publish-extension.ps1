@@ -5,9 +5,10 @@
     The zip lands beside the store listing, its description and images, so the folder holds everything the developer
     dashboard asks for. Older zips are removed: only the version being uploaded stays.
 
-    The version comes from extension\manifest.json; raise it there before each upload (the store refuses a version it
-    already has). The zip holds the extension folder without its README. Entries are written with forward slashes:
-    Windows PowerShell's Compress-Archive writes backslashes, which the store rejects.
+    Each run raises the last part of the version in extension\manifest.json (1.0.1 becomes 1.0.2) before packing, since
+    the store refuses a version it already has. The manifest is edited as text, so its layout stays as written. The zip
+    holds the extension folder without its README. Entries are written with forward slashes: Windows PowerShell's
+    Compress-Archive writes backslashes, which the store rejects.
 
     Example:
       .\publish-extension.ps1
@@ -16,7 +17,20 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
 $source = Join-Path $PSScriptRoot 'extension'
-$manifest = Get-Content (Join-Path $source 'manifest.json') -Raw | ConvertFrom-Json
+$manifestPath = Join-Path $source 'manifest.json'
+$manifestText = [System.IO.File]::ReadAllText($manifestPath)
+$versionPattern = '("version"\s*:\s*")([0-9.]+)(")'
+$versionMatch = [regex]::Match($manifestText, $versionPattern)
+if (-not $versionMatch.Success) { throw "No version found in $manifestPath" }
+
+$parts = @($versionMatch.Groups[2].Value.Split('.') | ForEach-Object { [int]$_ })
+$parts[-1]++
+if ($parts[-1] -gt 65535) { throw "Version part $($parts[-1]) is over Chrome's limit of 65535; raise an earlier part by hand." }
+$version = $parts -join '.'
+
+$manifestText = [regex]::new($versionPattern).Replace($manifestText, "`${1}$version`${3}", 1)
+[System.IO.File]::WriteAllText($manifestPath, $manifestText, (New-Object System.Text.UTF8Encoding $false))
+$manifest = $manifestText | ConvertFrom-Json
 $outputFolder = Join-Path $PSScriptRoot 'deploy\chrome-web-store'
 $zipPath = Join-Path $outputFolder "cinema-guard-$($manifest.version).zip"
 

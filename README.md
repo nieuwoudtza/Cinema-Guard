@@ -92,7 +92,7 @@ this repository.
 | `tests/extension/` | Node tests for the extension's matching, caption parsing and mute timing (`node --test "tests/extension/*.test.mjs"`) |
 | `userscript/` | The Tampermonkey userscript the extension grew out of (YouTube only, superseded by the extension) |
 | `publish.ps1` | Builds a desktop release into `deploy/desktop/` |
-| `publish-extension.ps1` | Packs the extension into `deploy/chrome-web-store/` |
+| `publish-extension.ps1` | Raises the extension's version and packs it into `deploy/chrome-web-store/` |
 | `deploy/` | Everything that ships, one folder per destination (below) |
 
 What the scripts write is git-ignored; the rest of `deploy/` is kept in the repository:
