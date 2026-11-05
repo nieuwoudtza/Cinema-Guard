@@ -56,46 +56,74 @@ public sealed class UpdateService
         return ReadyVersion;
     }
 
+    /// <summary>A headless run (another program's) is working from the installed folder, so installing must wait.</summary>
+    public bool IsHeldByHeadlessRun => HeadlessRuns.AnyActive();
+
     /// <summary>
-    /// Exits, installs the ready release and starts it again. False, and nothing happens, while a
-    /// headless run (another program's) is working from the installed folder.
+    /// Starts the installer and ends this process; the installer then opens the app again, the new version,
+    /// or this one when the install failed. Silent: Velopack's own progress window has an OK button that
+    /// only hides it, which left the user guessing. The app says what happens instead (see MainViewModel).
+    /// False, and nothing happens, when there is nothing to install, a headless run holds the folder, or
+    /// the installer did not start.
     /// </summary>
     public bool RestartAndApply()
     {
         if (_ready is null) return false;
 
-        if (HeadlessRuns.AnyActive())
+        if (IsHeldByHeadlessRun)
         {
             Log.Info($"Update {ReadyVersion} waits: a headless run is in progress.");
             return false;
         }
 
         Log.Info($"Restarting to install {ReadyVersion}.");
-        _manager.ApplyUpdatesAndRestart(_ready);
+
+        try
+        {
+            _manager.WaitExitThenApplyUpdates(_ready, silent: true, restart: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not start the update: {ex.Message}");
+            return false;
+        }
+
+        // The app the installer opens may take the foreground; without this it opens behind other windows.
+        AllowSetForegroundWindow(AnyProcess);
+
+        // At once, as Velopack's ApplyUpdatesAndRestart does: the installer does not wait for this process.
+        Environment.Exit(0);
         return true;
     }
 
     /// <summary>
     /// On close: install the ready release once this process has exited, without relaunching. Left for
-    /// the next start while a headless run is working from the installed folder.
+    /// the next start while a headless run is working from the installed folder. True when it was scheduled.
     /// </summary>
-    public void ApplyOnExit()
+    public bool ApplyOnExit()
     {
-        if (_ready is null) return;
+        if (_ready is null) return false;
 
-        if (HeadlessRuns.AnyActive())
+        if (IsHeldByHeadlessRun)
         {
             Log.Info($"Update {ReadyVersion} waits for the next start: a headless run is in progress.");
-            return;
+            return false;
         }
 
         try
         {
             _manager.WaitExitThenApplyUpdates(_ready, silent: true, restart: false);
+            return true;
         }
         catch (Exception ex)
         {
             Log.Warn($"Could not schedule the update: {ex.Message}");
+            return false;
         }
     }
+
+    private const int AnyProcess = -1;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
 }

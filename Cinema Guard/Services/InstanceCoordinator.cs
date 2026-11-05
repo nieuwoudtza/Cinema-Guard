@@ -20,7 +20,8 @@ public sealed class InstanceCoordinator : IDisposable
 
     public bool IsFirstInstance { get; }
 
-    public event Action<IReadOnlyList<string>>? PathsReceived;
+    /// <summary>Another launch handed over: its paths, none when the app was simply opened again.</summary>
+    public event Action<IReadOnlyList<string>>? LaunchReceived;
 
     public InstanceCoordinator(string key)
     {
@@ -53,11 +54,10 @@ public sealed class InstanceCoordinator : IDisposable
                     .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .ToList();
 
-                if (paths.Count > 0)
-                {
-                    Log.Info($"Received {paths.Count} path(s) from another instance.");
-                    PathsReceived?.Invoke(paths);
-                }
+                // Even with no paths: the window must come forward, or opening the app again looks
+                // like it did nothing while this copy runs on (minimised, or on another desktop).
+                Log.Info($"Another launch handed over {paths.Count} path(s).");
+                LaunchReceived?.Invoke(paths);
             }
             catch (OperationCanceledException)
             {
@@ -75,6 +75,10 @@ public sealed class InstanceCoordinator : IDisposable
     {
         try
         {
+            // This launch is what the user just clicked, so it may take the foreground; pass that on,
+            // else Windows only flashes the running copy's taskbar button.
+            AllowSetForegroundWindow(AnyProcess);
+
             using var client = new System.IO.Pipes.NamedPipeClientStream(".", _pipeName, System.IO.Pipes.PipeDirection.Out);
             client.Connect(3000);
 
@@ -86,6 +90,11 @@ public sealed class InstanceCoordinator : IDisposable
             Log.Warn($"Could not hand the paths to the running instance: {ex.Message}");
         }
     }
+
+    private const int AnyProcess = -1;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
 
     public void Dispose()
     {

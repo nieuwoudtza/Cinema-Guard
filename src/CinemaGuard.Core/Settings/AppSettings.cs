@@ -106,6 +106,9 @@ public sealed class AppSettings
     public HardwareInfo? Hardware { get; set; }
     public bool SetupGuideShown { get; set; }
 
+    /// <summary>The version an update was started to (on restart or close); the next start says whether it installed.</summary>
+    public string? PendingUpdateVersion { get; set; }
+
     // Behaviour
     public bool MuteVocalsOnly { get; set; }
     public bool ForceSameAudioEncoding { get; set; } = true;

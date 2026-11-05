@@ -184,7 +184,6 @@ public sealed partial class ModelsViewModel : ObservableObject
         };
 
         Refresh();
-        _ = UpdateDiskUsageAsync();
     }
 
     private AppSettings S => _settings.Current;
@@ -198,7 +197,7 @@ public sealed partial class ModelsViewModel : ObservableObject
     public ModelSection ServerSection { get; private set; } = null!;
 
     [ObservableProperty] private string _hardwareText = string.Empty;
-    [ObservableProperty] private string _diskText = string.Empty;
+    [ObservableProperty] private string _diskText = "Checking…";
     [ObservableProperty] private bool _isNoticeOpen;
     [ObservableProperty] private string _noticeTitle = string.Empty;
     [ObservableProperty] private string _noticeMessage = string.Empty;
@@ -282,6 +281,29 @@ public sealed partial class ModelsViewModel : ObservableObject
 
     // ------------------------------------------------------------------ state
 
+    /// <summary>
+    /// What the rows show from the disk and PATH. Gathered off the UI thread: measuring the engines alone
+    /// walks tens of thousands of files, and the page must open at once.
+    /// </summary>
+    private sealed record DiskState(
+        IReadOnlySet<string> InstalledModels,
+        IReadOnlySet<string> InstalledPacks,
+        IReadOnlyDictionary<string, long> PackSizes,
+        bool DockerFound,
+        string? ExternalFermion,
+        string PairDevice);
+
+    private DiskState? _state;
+    private bool _scanning;
+    private bool _rescan;
+
+    /// <summary>False until the first look at the disk is in; the rows stay disabled until then.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsChecking))]
+    private bool _isReady;
+
+    public bool IsChecking => !IsReady;
+
     private void QueueRefresh()
     {
         if (_refreshQueued) return;
@@ -289,11 +311,85 @@ public sealed partial class ModelsViewModel : ObservableObject
         _refreshTimer.Start();
     }
 
+    /// <summary>Shows the last known state at once, then looks at the disk again in the background.</summary>
     public void Refresh()
+    {
+        Apply();
+        _ = ScanAsync();
+        _ = UpdateDiskUsageAsync();
+    }
+
+    private async Task ScanAsync()
+    {
+        // A change that arrives mid-scan may not be in it: look once more when this one ends.
+        if (_scanning)
+        {
+            _rescan = true;
+            return;
+        }
+
+        _scanning = true;
+
+        try
+        {
+            do
+            {
+                _rescan = false;
+
+                // Read the settings here: the UI thread may change them while the scan runs.
+                var hardware = Hardware;
+                var pairPass = SpeechService.Pass(SpeechCatalog.PhononEnglish, S);
+
+                _state = await Task.Run(() => ReadDisk(hardware, pairPass));
+                IsReady = true;
+                Apply();
+            }
+            while (_rescan);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not check the downloaded models: {ex.Message}");
+        }
+        finally
+        {
+            _scanning = false;
+        }
+    }
+
+    private DiskState ReadDisk(HardwareInfo hardware, SpeechPass pairPass)
+    {
+        var models = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var model in SpeechCatalog.Models)
+        {
+            foreach (var variant in model.Variants.Where(v => _models.IsInstalled(model, v)))
+                models.Add(ModelManager.ModelKey(model, variant));
+        }
+
+        var packs = new HashSet<string>(StringComparer.Ordinal);
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        var known = new List<EnginePack> { EnginePacks.PhononRuntime };
+        if (EnginePacks.WhisperFor(hardware) is { } whisper) known.Add(whisper);
+        known.AddRange(EnginePacks.Legacy);
+
+        foreach (var pack in known.Where(_models.IsInstalled))
+        {
+            packs.Add(pack.Id);
+            sizes[pack.Id] = _models.InstalledSize(pack);
+        }
+
+        return new DiskState(models, packs, sizes, _locator.ResolveDocker(S) is not null, _models.ExternalFermion, _speech.DeviceName(pairPass, S));
+    }
+
+    private bool Installed(SpeechModelInfo model, ModelVariant variant) =>
+        _state?.InstalledModels.Contains(ModelManager.ModelKey(model, variant)) ?? false;
+
+    private bool Installed(EnginePack pack) => _state?.InstalledPacks.Contains(pack.Id) ?? false;
+
+    private void Apply()
     {
         HardwareText = Hardware.Summary;
         var plan = SpeechService.Plan(S);
-        var dockerGpu = Hardware.HasNvidia && _locator.ResolveDocker(S) is not null;
+        var dockerGpu = Hardware.HasNvidia && (_state?.DockerFound ?? false);
         var running = _main.IsRunning;
 
         foreach (var row in AllRows)
@@ -316,15 +412,14 @@ public sealed partial class ModelsViewModel : ObservableObject
 
         ApplyFilter();
         OnPropertyChanged(nameof(CurrentChoice));
-        _ = UpdateDiskUsageAsync();
     }
 
     private void RefreshPair(ModelRowViewModel row, bool dockerGpu, bool running)
     {
         var english = SpeechCatalog.PhononEnglish;
         var multilingual = SpeechCatalog.PhononMultilingual;
-        var installed = _models.IsInstalled(english, english.DefaultVariant) && _models.IsInstalled(multilingual, multilingual.DefaultVariant) &&
-                        _models.IsInstalled(EnginePacks.PhononRuntime);
+        var installed = Installed(english, english.DefaultVariant) && Installed(multilingual, multilingual.DefaultVariant) &&
+                        Installed(EnginePacks.PhononRuntime);
 
         var jobs = new[] { english, multilingual }
             .Select(m => _models.Job(ModelManager.ModelKey(m, m.DefaultVariant)))
@@ -332,8 +427,8 @@ public sealed partial class ModelsViewModel : ObservableObject
             .Cast<DownloadJob>()
             .ToList();
 
-        var pass = SpeechService.Pass(english, S);
-        row.Description = $"Two passes: English first, then multilingual to catch what it missed and spot foreign dialogue · {_speech.DeviceName(pass, S)}";
+        var device = _state is null ? string.Empty : $" · {_state.PairDevice}";
+        row.Description = $"Two passes: English first, then multilingual to catch what it missed and spot foreign dialogue{device}";
         row.IsSelected = S.SpeechModel == SpeechCatalog.PairId;
         row.IsRecommended = !row.IsSelected;
         row.ShowGpuSwitch = dockerGpu && row.IsSelected;
@@ -362,7 +457,7 @@ public sealed partial class ModelsViewModel : ObservableObject
     {
         var model = row.Model!;
         var variant = row.Variant!;
-        var installed = _models.IsInstalled(model, variant) && (model.Family != SpeechFamily.Phonon || _models.IsInstalled(EnginePacks.PhononRuntime));
+        var installed = Installed(model, variant) && (model.Family != SpeechFamily.Phonon || Installed(EnginePacks.PhononRuntime));
         var job = _models.Job(ModelManager.ModelKey(model, variant));
 
         row.Description = model.Family switch
@@ -384,7 +479,7 @@ public sealed partial class ModelsViewModel : ObservableObject
         row.DeleteTip = inUse ? "In use: pick another model first" : running ? "Wait for the queue to finish" : $"Delete {model.Name}";
     }
 
-    private static void ApplyJobState(ModelRowViewModel row, bool installed, List<DownloadJob> jobs)
+    private void ApplyJobState(ModelRowViewModel row, bool installed, List<DownloadJob> jobs)
     {
         row.IsInstalled = installed;
         row.IsDownloading = jobs.Count > 0;
@@ -406,30 +501,36 @@ public sealed partial class ModelsViewModel : ObservableObject
             row.StateText = installed ? "Downloaded" : string.Empty;
         }
 
-        row.HasStateText = row.StateText.Length > 0 && !row.IsDownloading;
-        row.ShowDownload = !installed && !row.IsDownloading;
+        // Not yet known whether it is on disk: offer neither Download nor Delete.
+        var known = _state is not null || row.IsDownloading;
+        row.HasStateText = known && row.StateText.Length > 0 && !row.IsDownloading;
+        row.ShowDownload = known && !installed && !row.IsDownloading;
         row.ShowSetUp = false;
     }
 
     private void RefreshEngine(EngineRowViewModel engine, SpeechPlan plan, bool running)
     {
-        var installed = _models.IsInstalled(engine.Pack);
+        var installed = Installed(engine.Pack);
         var job = _models.Job(ModelManager.PackKey(engine.Pack));
-        var external = engine.Pack.Kind == PackKind.PhononRuntime && _models.ExternalFermion is not null;
+        var external = engine.Pack.Kind == PackKind.PhononRuntime && _state?.ExternalFermion is not null;
         var legacy = EnginePacks.Legacy.Contains(engine.Pack);
+        var size = _state?.PackSizes.GetValueOrDefault(engine.Pack.Id) ?? 0;
+        var known = _state is not null;
 
         engine.IsInstalled = installed;
         engine.IsDownloading = job is not null;
         engine.IsProgressIndeterminate = job?.IsIndeterminate ?? false;
         engine.Progress = job?.Percent ?? 0;
         engine.ProgressText = job is null || job.IsIndeterminate ? string.Empty : $"{job.Percent:0}%";
-        engine.Description = legacy
-            ? $"No longer used: Parakeet runs on the CPU · {Size(_models.InstalledSize(engine.Pack))} can be reclaimed"
-            : external
-                ? $"Using {_models.ExternalFermion} (set in Settings)"
-                : $"{engine.Pack.Description} · {Size(installed ? _models.InstalledSize(engine.Pack) : engine.Pack.DiskSize)}";
+        engine.Description = !known
+            ? engine.Pack.Description
+            : legacy
+                ? $"No longer used: Parakeet runs on the CPU · {Size(size)} can be reclaimed"
+                : external
+                    ? $"Using {_state!.ExternalFermion} (set in Settings)"
+                    : $"{engine.Pack.Description} · {Size(installed ? size : engine.Pack.DiskSize)}";
         engine.StateText = job is not null ? job.Status : installed ? "Installed" : "Not installed";
-        engine.ShowDownload = !legacy && !installed && job is null;
+        engine.ShowDownload = known && !legacy && !installed && job is null;
         engine.ShowDelete = installed && job is null && !external;
     }
 
@@ -775,7 +876,8 @@ public sealed partial class ModelsViewModel : ObservableObject
         Refresh();
     }
 
-    public bool PairInstalled => PairRow.IsInstalled;
+    /// <summary>Read from the disk: the guide may open before the first background check is in.</summary>
+    public bool PairInstalled => Missing(PairRow).Count == 0;
     public long PairMissingBytes => MissingBytes(PairRow);
     public bool IsQueueRunning => _main.IsRunning;
 

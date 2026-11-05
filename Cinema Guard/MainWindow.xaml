@@ -30,7 +30,8 @@
             CompactPaneLength="48"
             AlwaysShowHeader="False"
             IsTitleBarAutoPaddingEnabled="False"
-            SelectionChanged="Nav_SelectionChanged">
+            SelectionChanged="Nav_SelectionChanged"
+            ItemInvoked="Nav_ItemInvoked">
 
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Queue" Tag="queue">
@@ -55,10 +56,23 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Grid RowDefinitions="Auto,Auto,*">
+            <!-- Opens the extension's Chrome Web Store page; it is not a page of its own. -->
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem
+                    Content="Browser extension"
+                    Tag="extension"
+                    SelectsOnInvoked="False"
+                    ToolTipService.ToolTip="Mute swearing in YouTube videos while you watch, in Chrome, Brave or Edge">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xEA86;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <Grid RowDefinitions="Auto,Auto,Auto,*">
                 <InfoBar
                     Margin="24,8,24,0"
-                    Title="Update ready"
+                    Title="{x:Bind ViewModel.UpdateTitle, Mode=OneWay}"
                     Severity="Informational"
                     IsClosable="True"
                     IsOpen="{x:Bind ViewModel.IsUpdateReady, Mode=TwoWay}"
@@ -69,10 +83,23 @@
                             Click="RestartToUpdate_Click"
                             IsEnabled="{x:Bind ViewModel.CanRestartToUpdate, Mode=OneWay}" />
                     </InfoBar.ActionButton>
+                    <ProgressBar
+                        Margin="0,0,0,12"
+                        IsIndeterminate="True"
+                        Visibility="{x:Bind ViewModel.IsInstallingUpdate, Mode=OneWay}" />
                 </InfoBar>
-                <!-- Phonon is set to the GPU but its image is missing (first install, or an update moved it on). -->
+                <!-- The first start after an update: whether it installed. -->
                 <InfoBar
                     Grid.Row="1"
+                    Margin="24,8,24,0"
+                    IsClosable="True"
+                    IsOpen="{x:Bind ViewModel.IsUpdateResultOpen, Mode=TwoWay}"
+                    Title="{x:Bind ViewModel.UpdateResultTitle, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.UpdateResultMessage, Mode=OneWay}"
+                    Severity="{x:Bind ViewModel.UpdateResultSeverity, Mode=OneWay}" />
+                <!-- Phonon is set to the GPU but its image is missing (first install, or an update moved it on). -->
+                <InfoBar
+                    Grid.Row="2"
                     Margin="24,8,24,0"
                     IsClosable="True"
                     IsOpen="{x:Bind ViewModel.IsGpuNoticeOpen, Mode=TwoWay}"
@@ -86,7 +113,7 @@
                             Visibility="{x:Bind ViewModel.CanDownloadGpuImage, Mode=OneWay}" />
                     </InfoBar.ActionButton>
                 </InfoBar>
-                <Frame x:Name="ContentFrame" Grid.Row="2" />
+                <Frame x:Name="ContentFrame" Grid.Row="3" />
             </Grid>
         </NavigationView>
     </Grid>

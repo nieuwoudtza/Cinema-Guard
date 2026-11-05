@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using CinemaGuard.Core.Logging;
 using CinemaGuard.Core.Settings;
@@ -53,6 +54,7 @@ public sealed class ModelManager(SettingsService settings, IProcessRunner runner
     private readonly Dictionary<string, DownloadJob> _jobs = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _phononLock = new(1, 1);
     private long? _diskUsage;
+    private readonly ConcurrentDictionary<string, long> _packSizes = new(StringComparer.Ordinal);
 
     /// <summary>Raised from worker threads whenever a job moves or anything is installed or deleted.</summary>
     public event Action? Changed;
@@ -562,7 +564,8 @@ public sealed class ModelManager(SettingsService settings, IProcessRunner runner
         });
     }
 
-    public long InstalledSize(EnginePack pack) => FolderSize(pack.Folder);
+    /// <summary>Cached until something changes: the Phonon engine alone is tens of thousands of files.</summary>
+    public long InstalledSize(EnginePack pack) => _packSizes.GetOrAdd(pack.Id, _ => FolderSize(pack.Folder));
 
     /// <summary>Everything under models\ and engines\, cached until something changes.</summary>
     public long DiskUsage()
@@ -573,7 +576,11 @@ public sealed class ModelManager(SettingsService settings, IProcessRunner runner
         return total;
     }
 
-    private void InvalidateDiskUsage() => _diskUsage = null;
+    private void InvalidateDiskUsage()
+    {
+        _diskUsage = null;
+        _packSizes.Clear();
+    }
 
     public static long FolderSize(string folder)
     {

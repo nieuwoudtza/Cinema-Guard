@@ -78,8 +78,12 @@ public partial class App : Application
             return;
         }
 
-        _instances.PathsReceived += paths =>
-            Shell?.DispatcherQueue.TryEnqueue(() => MainViewModel?.AddPaths(paths, recursive: false));
+        _instances.LaunchReceived += paths =>
+            Shell?.DispatcherQueue.TryEnqueue(() =>
+            {
+                Shell.BringToFront();
+                if (paths.Count > 0) MainViewModel?.AddPaths(paths, recursive: false);
+            });
 
         MainViewModel = Services.GetRequiredService<MainViewModel>();
 

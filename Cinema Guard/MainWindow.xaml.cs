@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Threading;
 using CinemaGuard.Core.Tools;
 using Cinema_Guard.Services;
@@ -19,6 +20,9 @@ public sealed partial class MainWindow : Window
     /// <summary>The smallest window, in effective (96 DPI) pixels.</summary>
     private const int MinimumWidth = 1040;
     private const int MinimumHeight = 680;
+
+    /// <summary>The browser extension's page in the Chrome Web Store.</summary>
+    public const string ExtensionUrl = "https://chromewebstore.google.com/detail/cinema-guard/maidlcfjpdcmfbbkdbijfhegbbnoicfn";
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
@@ -91,9 +95,33 @@ public sealed partial class MainWindow : Window
         var start = openTools ? typeof(ToolsPage) : typeof(QueuePage);
         if (ContentFrame.CurrentSourcePageType != start) ContentFrame.Navigate(start);
 
+        // Once shown (App activates the window after this): the installer opens it without focus.
+        if (ViewModel.ReportUpdateResult()) DispatcherQueue.TryEnqueue(BringToFront);
+
         _ = ViewModel.CheckForUpdatesAsync(_updateCheck.Token);
         _ = ViewModel.CheckGpuImageAsync(_updateCheck.Token);
+
+        // Once the window is up: the Models page then opens on what is already known about the disk.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => App.Services.GetRequiredService<ModelsViewModel>());
     }
+
+    /// <summary>
+    /// The app was opened again: show this window where the user is looking. Minimised, or left on
+    /// another virtual desktop, it otherwise looks as if the app runs on in the background.
+    /// </summary>
+    public void BringToFront()
+    {
+        var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        VirtualDesktops.MoveToCurrent(handle);
+
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter) presenter.Restore();
+
+        Activate();
+        SetForegroundWindow(handle);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
 
     /// <summary>Selects a page by its nav tag ("queue", "filter", "models", "tools", "settings").</summary>
     public void NavigateTo(string tag)
@@ -114,7 +142,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void RestartToUpdate_Click(object sender, RoutedEventArgs e) => ViewModel.RestartToUpdate();
+    private async void RestartToUpdate_Click(object sender, RoutedEventArgs e) => await ViewModel.RestartToUpdateAsync();
 
     private async void DownloadGpuImage_Click(object sender, RoutedEventArgs e) => await ViewModel.DownloadGpuImageAsync();
 
@@ -137,5 +165,11 @@ public sealed partial class MainWindow : Window
             };
 
         if (ContentFrame.CurrentSourcePageType != page) ContentFrame.Navigate(page);
+    }
+
+    private void Nav_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItemContainer?.Tag is "extension")
+            Process.Start(new ProcessStartInfo(ExtensionUrl) { UseShellExecute = true });
     }
 }

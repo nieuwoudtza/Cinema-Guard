@@ -6,6 +6,7 @@
     xmlns:vm="using:Cinema_Guard.ViewModels"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="mc"
+    NavigationCacheMode="Required"
     Background="Transparent">
 
     <Page.Resources>
@@ -130,7 +131,11 @@
                                 <TextBlock Text="This PC" FontWeight="SemiBold" />
                                 <TextBlock Text="{x:Bind ViewModel.HardwareText, Mode=OneWay}" Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.DiskText, Mode=OneWay}" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <!-- Until the first look at the disk is in, the rows below are disabled. -->
+                                <ProgressRing Width="16" Height="16" IsActive="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind ViewModel.DiskText, Mode=OneWay}" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
+                            </StackPanel>
                             <Button Grid.Column="3" Content="Open folder" Click="OpenFolder_Click" ToolTipService.ToolTip="Where the models are stored" />
                             <Button Grid.Column="4" Content="Re-detect" Click="Redetect_Click" ToolTipService.ToolTip="Check the graphics card and processor again (after a new card or driver)" />
                         </Grid>
@@ -143,7 +148,7 @@
                         <SelectorBarItem Text="Multilingual" />
                     </SelectorBar>
 
-                    <ItemsControl ItemsSource="{x:Bind ViewModel.Sections}">
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Sections}" IsEnabled="{x:Bind ViewModel.IsReady, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:ModelSection">
                                 <StackPanel Spacing="0" Margin="0,8,0,0" Visibility="{x:Bind IsVisible, Mode=OneWay}">
@@ -175,7 +180,7 @@
                         <Run Text="downloaded with the first model that needs them" FontWeight="Normal" />
                     </TextBlock>
                     <Border Style="{StaticResource CardBorderStyle}">
-                        <ItemsControl Margin="0,-1,0,0" ItemsSource="{x:Bind ViewModel.Engines}">
+                        <ItemsControl Margin="0,-1,0,0" ItemsSource="{x:Bind ViewModel.Engines}" IsEnabled="{x:Bind ViewModel.IsReady, Mode=OneWay}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:EngineRowViewModel">
                                     <Grid

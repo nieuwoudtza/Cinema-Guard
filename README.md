@@ -38,8 +38,12 @@ faster, but isn't needed.
 ### Browser extension
 
 Cinema Guard also comes as a browser extension for Chrome, Brave and Edge that mutes swearing in YouTube videos while
-you watch, with the same word lists. It is on its way to the Chrome Web Store; until then,
-[extension/README.md](extension/README.md) shows how to load it yourself.
+you watch, with the same word lists.
+
+**[Add Cinema Guard from the Chrome Web Store](https://chromewebstore.google.com/detail/cinema-guard/maidlcfjpdcmfbbkdbijfhegbbnoicfn)**
+
+The app's **Browser extension** button, at the bottom of the side menu, opens the same page.
+[extension/README.md](extension/README.md) shows how to load the extension from this repository instead.
 
 ## How to use it
 

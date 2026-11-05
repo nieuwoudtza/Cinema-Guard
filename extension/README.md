@@ -3,7 +3,11 @@
 Mutes swearing in online videos, using their captions: the same word lists, word families, matching and mute padding as the
 Windows app. Works in Brave, Chrome and other Chromium browsers.
 
-## Install (load unpacked)
+## Install
+
+Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/cinema-guard/maidlcfjpdcmfbbkdbijfhegbbnoicfn).
+
+## Install from this folder (load unpacked)
 
 1. Open `brave://extensions` (or `chrome://extensions`).
 2. Turn on **Developer mode** (top right).

@@ -82,6 +82,49 @@ public sealed partial class FilterPage : Page
                 return;
             }
 
+            var chevron = new FontIcon { Glyph = "", FontSize = 10 };
+            _countText = new TextBlock { Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"], VerticalAlignment = VerticalAlignment.Center };
+
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            content.Children.Add(_countText);
+            content.Children.Add(chevron);
+
+            var expand = new Button
+            {
+                Content = content,
+                Style = (Style)Application.Current.Resources["TransparentButtonStyle"],
+                Padding = new Thickness(8, 2, 8, 2),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            AutomationProperties.SetName(expand, $"Spellings of {FilterCatalog.DisplayName(root)}");
+            ToolTipService.SetToolTip(expand, "Choose single spellings");
+
+            VariableSizedWrapGrid? details = null;
+
+            expand.Click += (_, _) =>
+            {
+                // Built on first open: the hundreds of spellings would otherwise slow every visit to the page.
+                if (details is null)
+                {
+                    details = Spellings(family);
+                    panel.Children.Insert(panel.Children.IndexOf(header) + 1, details);
+                    Refresh();
+                }
+
+                var open = details.Visibility == Visibility.Collapsed;
+                details.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+                chevron.Glyph = open ? "" : "";
+            };
+
+            Grid.SetColumn(expand, 1);
+            header.Children.Add(expand);
+
+            Refresh();
+        }
+
+        private VariableSizedWrapGrid Spellings(IReadOnlyList<string> family)
+        {
             var details = new VariableSizedWrapGrid
             {
                 Orientation = Orientation.Horizontal,
@@ -103,36 +146,7 @@ public sealed partial class FilterPage : Page
                 _spellings.Add((box, word));
             }
 
-            var chevron = new FontIcon { Glyph = "", FontSize = 10 };
-            _countText = new TextBlock { Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"], VerticalAlignment = VerticalAlignment.Center };
-
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            content.Children.Add(_countText);
-            content.Children.Add(chevron);
-
-            var expand = new Button
-            {
-                Content = content,
-                Style = (Style)Application.Current.Resources["TransparentButtonStyle"],
-                Padding = new Thickness(8, 2, 8, 2),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            AutomationProperties.SetName(expand, $"Spellings of {FilterCatalog.DisplayName(root)}");
-            ToolTipService.SetToolTip(expand, "Choose single spellings");
-
-            expand.Click += (_, _) =>
-            {
-                var open = details.Visibility == Visibility.Collapsed;
-                details.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-                chevron.Glyph = open ? "" : "";
-            };
-
-            Grid.SetColumn(expand, 1);
-            header.Children.Add(expand);
-            panel.Children.Add(details);
-
-            Refresh();
+            return details;
         }
 
         /// <summary>Selects or clears the whole family (Select all / none).</summary>

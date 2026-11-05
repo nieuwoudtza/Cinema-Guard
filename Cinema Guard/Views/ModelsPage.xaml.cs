@@ -49,6 +49,8 @@ public sealed partial class ModelsPage : Page
 
     private async void Row_Tapped(object sender, TappedRoutedEventArgs e)
     {
+        if (!ViewModel.IsReady) return;
+
         // Taps on the dropdown, the switch or a button belong to them, not to "pick this row".
         if (IsInsideControl(e.OriginalSource as DependencyObject, sender as DependencyObject)) return;
         if ((sender as FrameworkElement)?.DataContext is ModelRowViewModel row) await SelectAsync(row);
