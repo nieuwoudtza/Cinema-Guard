@@ -319,9 +319,15 @@
                     <!-- ============================ ABOUT: the one place the app's version is shown -->
                     <TextBlock Text="ABOUT" Style="{StaticResource SectionHeaderStyle}" />
                     <Border Style="{StaticResource CardBorderStyle}">
-                        <controls:SettingRow Header="Cinema Guard" Description="Subtitles and profanity muting with Phonon 2.5. FFmpeg never re-encodes the video.">
-                            <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
-                        </controls:SettingRow>
+                        <StackPanel>
+                            <controls:SettingRow Header="Cinema Guard" Description="Subtitles and profanity muting with Phonon 2.5. FFmpeg never re-encodes the video.">
+                                <TextBlock Text="{x:Bind ViewModel.Version}" Style="{StaticResource MutedStyle}" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow Header="What's new" Description="The changelog: what changed in each release, newest first. The first start after an update shows the new changes by itself.">
+                                <Button Content="Show changelog" Click="Changelog_Click" ToolTipService.ToolTip="What changed in each release of Cinema Guard" />
+                            </controls:SettingRow>
+                        </StackPanel>
                     </Border>
                 </StackPanel>
             </Grid>

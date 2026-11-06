@@ -176,4 +176,12 @@ chrome.runtime.onStartup.addListener(() => syncSiteScripts().catch(() => {}));
 chrome.runtime.onInstalled.addListener(details => {
     syncSiteScripts().catch(() => {});
     if (details.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#welcome') });
+
+    // The popup says the extension was updated until What's new is seen. Reloading an unpacked copy also arrives as
+    // an update, with the same version. After several updates, the oldest version is kept, so all of it shows as new.
+    if (details.reason === 'update' && details.previousVersion && details.previousVersion !== chrome.runtime.getManifest().version) {
+        chrome.storage.local.get('updatedFrom').then(({ updatedFrom }) => {
+            if (!updatedFrom) return chrome.storage.local.set({ updatedFrom: details.previousVersion });
+        }).catch(() => {});
+    }
 });

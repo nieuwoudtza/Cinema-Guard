@@ -17,4 +17,9 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The release notes the app shows under Settings, About, and after an update (Changelog). -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" Link="CHANGELOG.md" />
+  </ItemGroup>
+
 </Project>

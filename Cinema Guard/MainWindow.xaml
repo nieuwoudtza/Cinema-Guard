@@ -96,7 +96,14 @@
                     IsOpen="{x:Bind ViewModel.IsUpdateResultOpen, Mode=TwoWay}"
                     Title="{x:Bind ViewModel.UpdateResultTitle, Mode=OneWay}"
                     Message="{x:Bind ViewModel.UpdateResultMessage, Mode=OneWay}"
-                    Severity="{x:Bind ViewModel.UpdateResultSeverity, Mode=OneWay}" />
+                    Severity="{x:Bind ViewModel.UpdateResultSeverity, Mode=OneWay}">
+                    <InfoBar.ActionButton>
+                        <Button
+                            Content="What's new"
+                            Click="WhatsNew_Click"
+                            Visibility="{x:Bind ViewModel.HasWhatsNew, Mode=OneWay}" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
                 <!-- Phonon is set to the GPU but its image is missing (first install, or an update moved it on). -->
                 <InfoBar
                     Grid.Row="2"

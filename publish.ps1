@@ -16,6 +16,9 @@
     Then replace the contents of the IIS folder behind the feed URL with the release folder, deploy\desktop\feed.
     The publish folder, deploy\desktop\publish, is only the input to vpk pack.
 
+    Before publishing, the "## Unreleased" heading in CHANGELOG.md becomes "## <version> - <date>" (with an em dash), so the app
+    shows those changes after the update. Commit CHANGELOG.md with the release.
+
     Versions are dated: yyyy.MM.dd.<iteration>, where the iteration counts the day's releases: the first
     release of a day is 2026.11.01.1, the next 2026.11.01.2, ..., starting at 1 again the next day. The
     releases already made today are read from the feed, the local release folder and
@@ -174,6 +177,29 @@ if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
     & dotnet tool install --global vpk
     if ($LASTEXITCODE -ne 0) { Fail "could not install vpk (dotnet tool install --global vpk)." }
     $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
+}
+
+# ---------------------------------------------------------------- changelog
+
+# The changes under "## Unreleased" become this release's: the app embeds CHANGELOG.md and shows them after the
+# update. A run that failed after this step left its version on top without releasing it; that heading is renamed
+# instead. The dash is written as a code point because Windows PowerShell reads this file as ANSI.
+$changelogPath = Join-Path $root "CHANGELOG.md"
+$changelog = [IO.File]::ReadAllText($changelogPath)
+$heading = "## {0} {1} {2}" -f $DisplayVersion, [char]0x2014, $date.ToString("d MMMM yyyy", [Globalization.CultureInfo]::InvariantCulture)
+$top = [regex]::Match($changelog, '(?m)^## (\S+)[^\r\n]*')
+$topPackage = $null
+if ($top.Success -and $top.Groups[1].Value -match '^(\d{4})\.(\d{2})\.(\d{2})\.(\d+)$') {
+    $topPackage = "{0}.{1}.{2}" -f [int]$Matches[1], ([int]$Matches[2] * 100 + [int]$Matches[3]), [int]$Matches[4]
+}
+
+if ($top.Success -and ($top.Groups[1].Value -eq "Unreleased" -or ($topPackage -and $released -notcontains $topPackage))) {
+    $changelog = $changelog.Substring(0, $top.Index) + $heading + $changelog.Substring($top.Index + $top.Length)
+    [IO.File]::WriteAllText($changelogPath, $changelog, (New-Object System.Text.UTF8Encoding $false))
+    Write-Host "CHANGELOG.md: $heading" -ForegroundColor Green
+}
+else {
+    Write-Warning "CHANGELOG.md has no '## Unreleased' section, so the app shows no changes for $DisplayVersion."
 }
 
 # CgReleaseBuild: this version is final, so Directory.Build.targets neither stamps nor counts the build.

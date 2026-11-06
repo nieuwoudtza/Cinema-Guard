@@ -14,6 +14,13 @@ body {
 }
 .app-name { flex: 1; font-weight: 600; }
 
+/* "Updated to version …", until What's new is opened or this is closed. */
+.updated { padding: 0 12px 12px; }
+.updated .infobar { align-items: center; padding: 8px 8px 8px 14px; }
+.updated-text { display: flex; flex: 1; flex-direction: column; gap: 2px; }
+.updated-text a { font-size: 12px; }
+.updated .dismiss { min-height: 28px; padding: 4px 6px; }
+
 main {
     flex: 1;
     overflow-y: auto;

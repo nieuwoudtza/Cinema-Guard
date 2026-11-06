@@ -10,6 +10,7 @@
         { id: 'sites', title: 'Sites and channels', icon: 'globe', render: sitesPage },
         { id: 'statistics', title: 'Statistics', icon: 'chart', render: statisticsPage },
         { id: 'backup', title: 'Backup', icon: 'archive', render: backupPage },
+        { id: 'whats-new', title: 'What\'s new', icon: 'sparkle', render: whatsNewPage },
     ];
 
     const BUILT_IN_SITES = [
@@ -477,6 +478,37 @@
                     },
                     text: 'Reset',
                 })))),
+        ];
+    }
+
+    // ---- What's new ----
+
+    // The version the extension was updated from (kept by the background worker until this page is seen): the
+    // versions after it are marked New. Held here too, so a redraw keeps the marks while the page is open.
+    let updatedFrom = null;
+
+    async function whatsNewPage() {
+        const version = chrome.runtime.getManifest().version;
+        const stored = (await chrome.storage.local.get('updatedFrom')).updatedFrom;
+        if (stored) updatedFrom = stored;
+        await chrome.storage.local.remove('updatedFrom');
+
+        let entries = [];
+        try {
+            entries = await CG.changelog.load();
+        } catch { /* shown below */ }
+        const fresh = new Set(updatedFrom ? CG.changelog.since(entries, updatedFrom, version) : []);
+
+        return [
+            title('What\'s new'),
+            intro(`What changed in each version of Cinema Guard, newest first. You have version ${version}.`),
+            entries.length ? entries.map(entry => [
+                el('h2', { class: 'section-header release-header' },
+                    el('span', { text: entry.title }),
+                    entry.date ? el('span', { class: 'muted', text: entry.date }) : null,
+                    fresh.has(entry) ? el('span', { class: 'pill accent', text: 'New' }) : null),
+                el('div', { class: 'card' }, el('ul', { class: 'changes' }, entry.changes.map(change => el('li', { text: change })))),
+            ]) : el('div', { class: 'card' }, el('div', { class: 'empty-row', text: 'The list of changes could not be read.' })),
         ];
     }
 

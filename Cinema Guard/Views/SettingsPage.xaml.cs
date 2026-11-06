@@ -90,6 +90,9 @@ public sealed partial class SettingsPage : Page
     private async void CommandLine_Click(object sender, RoutedEventArgs e) =>
         await Dialogs.ShowCommandLineAsync(XamlRoot, CinemaGuard.Core.Pipeline.LaunchArguments.HelpText);
 
+    private async void Changelog_Click(object sender, RoutedEventArgs e) =>
+        await Dialogs.ShowChangelogAsync(XamlRoot, "What's new in Cinema Guard", $"You have version {CinemaGuard.Core.CoreInfo.Version}.", CinemaGuard.Core.Changelog.Entries);
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         var (ok, message) = ViewModel.Save();

@@ -91,6 +91,8 @@ this repository.
 | `extension/` | The browser extension (Manifest V3); see [extension/README.md](extension/README.md) |
 | `tests/extension/` | Node tests for the extension's matching, caption parsing and mute timing (`node --test "tests/extension/*.test.mjs"`) |
 | `userscript/` | The Tampermonkey userscript the extension grew out of (YouTube only, superseded by the extension) |
+| `CHANGELOG.md` | What changed in each desktop release; embedded in the app (Settings → About → What's new) |
+| `extension/CHANGELOG.md` | The same for the extension, shown on its options page under What's new |
 | `publish.ps1` | Builds a desktop release into `deploy/desktop/` |
 | `publish-extension.ps1` | Raises the extension's version and packs it into `deploy/chrome-web-store/` |
 | `deploy/` | Everything that ships, one folder per destination (below) |
@@ -299,6 +301,13 @@ Releases are numbered by date, `yyyy.MM.dd.<iteration>`: `.\publish.ps1` with no
 `2026.11.01.1`, and a second release that day `2026.11.01.2` (it reads the feed and the local release
 folder to find the next iteration). Velopack only accepts 3-part versions, so the package itself is
 `2026.1101.1`; the app shows the dated form.
+
+Write each change under `## Unreleased` in `CHANGELOG.md` as you make it, one `- ` line per change.
+`publish.ps1` renames that heading to the version and date it releases, so commit `CHANGELOG.md` with the
+release. The app embeds the file: Settings → About → What's new lists every release, and the first start after an
+update shows what is new since the version that ran before (`LastRunVersion` in the settings).
+`publish-extension.ps1` does the same with `extension/CHANGELOG.md`; after an update the extension's popup links to
+its What's new page.
 
 ### Tests
 

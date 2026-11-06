@@ -33,6 +33,8 @@ If you used the Tampermonkey userscript, turn it off: both would mute and change
 - **Options:** the filter (as in the Windows app), mute padding, the fade in and out around each mute (30 ms by
   default), censor character, caption language, YouTube caption behaviour, progress-bar marks, sites and channels,
   statistics, and backup. **Backup → Import** reads the Windows app's `%LOCALAPPDATA%\CinemaGuard\settings.json`.
+- **What's new** (last in the options page's menu): what changed in each version. After an update the popup says so and
+  links there, and the versions you have not seen yet are marked New.
 - **Cinema Guard for Windows** cleans your own video files: <https://wavebit.dev/software/cinemaguard>.
 - **Keyboard:** Alt+Shift+M turns filtering on or off (change it at `brave://extensions/shortcuts`).
 
@@ -45,5 +47,6 @@ If you used the Tampermonkey userscript, turn it off: both would mute and change
 | `content/bridge.js` | Runs beside the page: settings in, state and statistics out |
 | `background.js` | Tab state, badge, statistics, keyboard shortcut, sites turned on by the user |
 | `popup/`, `options/`, `ui/` | The toolbar popup, the options page and their shared look |
+| `CHANGELOG.md` | What changed in each version, read by What's new (`shared/changelog.js`). Add changes under `## Unreleased`; `publish-extension.ps1` names it after the version it packs |
 
 Tests for the shared core: `node --test "tests/extension/*.test.mjs"` from the repository root.

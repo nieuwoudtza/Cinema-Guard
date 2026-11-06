@@ -119,6 +119,9 @@ public sealed class AppSettings
     /// <summary>The version an update was started to (on restart or close); the next start says whether it installed.</summary>
     public string? PendingUpdateVersion { get; set; }
 
+    /// <summary>The version that started last; the first start of a newer one shows what changed since (the changelog).</summary>
+    public string? LastRunVersion { get; set; }
+
     // Behaviour
     public bool MuteVocalsOnly { get; set; }
     public bool ForceSameAudioEncoding { get; set; } = true;

@@ -148,6 +148,13 @@ kbd {
 
 .video-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
+/* ---- What's new ---- */
+
+.release-header { display: flex; align-items: baseline; gap: 10px; }
+.release-header .pill { align-self: center; }
+.changes { margin: 0; padding: 12px 16px 12px 34px; }
+.changes li + li { margin-top: 6px; }
+
 /* ---- Toast ---- */
 
 .toast {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using CinemaGuard.Core;
@@ -32,6 +33,13 @@ public sealed partial class MainViewModel
     [ObservableProperty] private string _updateResultTitle = string.Empty;
     [ObservableProperty] private string _updateResultMessage = string.Empty;
     [ObservableProperty] private InfoBarSeverity _updateResultSeverity = InfoBarSeverity.Success;
+
+    /// <summary>The releases since the version that started last, newest first; empty unless this is a newer one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWhatsNew))]
+    private IReadOnlyList<ChangelogEntry> _whatsNew = [];
+
+    public bool HasWhatsNew => WhatsNew.Count > 0;
 
     public bool CanRestartToUpdate => IsUpdateReady && !IsBusy && !IsInstallingUpdate;
 
@@ -145,6 +153,24 @@ public sealed partial class MainViewModel
 
         IsUpdateResultOpen = true;
         return true;
+    }
+
+    /// <summary>
+    /// Notes the version starting now and gathers what changed since the one that started before it, into
+    /// <see cref="WhatsNew"/>. Before <see cref="ReportUpdateResult"/>, which forgets the update. A new install
+    /// shows nothing; an update from a version that kept no record shows only this version's changes.
+    /// </summary>
+    public void TakeWhatsNew()
+    {
+        var previous = Settings.LastRunVersion;
+        if (previous == CoreInfo.Version) return;
+
+        var justUpdated = Settings.PendingUpdateVersion == CoreInfo.Version;
+        Settings.LastRunVersion = CoreInfo.Version;
+        _settingsService.Save();
+
+        if (previous is null && !justUpdated) return;
+        WhatsNew = Changelog.Since(previous, CoreInfo.Version);
     }
 
     private void ExpectUpdate(string? version)

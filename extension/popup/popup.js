@@ -21,6 +21,7 @@
         ({ settings, allowChannels } = await loadSettings());
         cover = await coverage(tab?.url);
         showSwitch();
+        showUpdated();
 
         if (tab) chrome.runtime.sendMessage({ type: 'command', tabId: tab.id, command: { name: 'repost' } }).catch(() => {});
         await refresh();
@@ -38,6 +39,33 @@
     function showSwitch() {
         enabledSwitch.checked = settings.enabled;
         document.getElementById('enabled-label').textContent = settings.enabled ? 'On' : 'Off';
+    }
+
+    // After an update, until What's new is opened or this is closed.
+    async function showUpdated() {
+        const box = document.getElementById('updated');
+        const { updatedFrom } = await chrome.storage.local.get('updatedFrom');
+        if (!updatedFrom) return;
+
+        const dismiss = async () => {
+            box.hidden = true;
+            await chrome.storage.local.remove('updatedFrom');
+        };
+
+        box.replaceChildren(el('div', { class: 'infobar' },
+            el('div', { class: 'updated-text' },
+                el('b', { text: `Updated to version ${chrome.runtime.getManifest().version}` }),
+                // The options page clears the notice once What's new is shown; the popup closes as the tab opens.
+                el('a', {
+                    href: '#',
+                    text: 'See what\'s new',
+                    onclick: event => {
+                        event.preventDefault();
+                        chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#whats-new') });
+                    },
+                })),
+            el('button', { class: 'button subtle dismiss', title: 'Close', 'aria-label': 'Close', onclick: dismiss }, icon('dismiss'))));
+        box.hidden = false;
     }
 
     enabledSwitch.addEventListener('change', () => saveSettings({ ...settings, enabled: enabledSwitch.checked }));

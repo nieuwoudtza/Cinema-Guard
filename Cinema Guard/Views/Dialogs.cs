@@ -200,6 +200,60 @@ public static class Dialogs
     }
 
     /// <summary>
+    /// Release notes, newest first: the whole changelog from Settings, or what is new after an update. Each release
+    /// is its version and date, then one bulleted line per change.
+    /// </summary>
+    public static async Task ShowChangelogAsync(XamlRoot root, string title, string? intro, IReadOnlyList<CinemaGuard.Core.ChangelogEntry> entries)
+    {
+        var muted = (Style)Application.Current.Resources["MutedStyle"];
+        var body = new StackPanel { Spacing = 18, MaxWidth = 520 };
+
+        if (intro is not null) body.Children.Add(new TextBlock { Text = intro, TextWrapping = TextWrapping.Wrap });
+
+        if (entries.Count == 0)
+        {
+            body.Children.Add(new TextBlock { Text = "No changes are listed for this version.", Style = muted });
+        }
+
+        foreach (var entry in entries)
+        {
+            var release = new StackPanel { Spacing = 6 };
+
+            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            heading.Children.Add(new TextBlock { Text = entry.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            if (entry.Date is not null) heading.Children.Add(new TextBlock { Text = entry.Date, Style = muted, VerticalAlignment = VerticalAlignment.Bottom });
+            release.Children.Add(heading);
+
+            foreach (var change in entry.Changes)
+            {
+                // A hanging bullet: wrapped lines start under the text, not under the dot.
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var text = new TextBlock { Text = change, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+                Grid.SetColumn(text, 1);
+                row.Children.Add(new TextBlock { Text = "•" });
+                row.Children.Add(text);
+                release.Children.Add(row);
+            }
+
+            body.Children.Add(release);
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = title,
+            Content = new ScrollViewer { Content = body, MaxHeight = 560, Padding = new Thickness(0, 0, 16, 0) },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        await dialog.ShowAsync();
+    }
+
+    /// <summary>
     /// Counts down and returns true when the time runs out or the user presses the action button; false
     /// on Cancel. For "When finished": a sleep or shutdown nobody can stop would be a nasty surprise.
     /// </summary>

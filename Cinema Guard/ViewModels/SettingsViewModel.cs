@@ -202,6 +202,7 @@ public sealed partial class SettingsViewModel(SettingsService service, SpeechSer
         defaults.Hardware = S.Hardware;
         defaults.FirstRun = false;
         defaults.SetupGuideShown = true;
+        defaults.LastRunVersion = S.LastRunVersion;
         service.SaveAs(defaults);
     }
 }

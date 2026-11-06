@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using CinemaGuard.Core.Tools;
 using Cinema_Guard.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,8 +96,14 @@ public sealed partial class MainWindow : Window
         var start = openTools ? typeof(ToolsPage) : typeof(QueuePage);
         if (ContentFrame.CurrentSourcePageType != start) ContentFrame.Navigate(start);
 
+        // Before the update is reported, which forgets it.
+        ViewModel.TakeWhatsNew();
+
         // Once shown (App activates the window after this): the installer opens it without focus.
         if (ViewModel.ReportUpdateResult()) DispatcherQueue.TryEnqueue(BringToFront);
+
+        // The first start after an update shows what changed; a dialog needs the window's XamlRoot.
+        if (ViewModel.HasWhatsNew) Nav.Loaded += ShowWhatsNewOnce;
 
         _ = ViewModel.CheckForUpdatesAsync(_updateCheck.Token);
         _ = ViewModel.CheckGpuImageAsync(_updateCheck.Token);
@@ -145,6 +152,25 @@ public sealed partial class MainWindow : Window
     private async void RestartToUpdate_Click(object sender, RoutedEventArgs e) => await ViewModel.RestartToUpdateAsync();
 
     private async void DownloadGpuImage_Click(object sender, RoutedEventArgs e) => await ViewModel.DownloadGpuImageAsync();
+
+    private async void WhatsNew_Click(object sender, RoutedEventArgs e) => await ShowWhatsNewAsync();
+
+    private async void ShowWhatsNewOnce(object sender, RoutedEventArgs e)
+    {
+        Nav.Loaded -= ShowWhatsNewOnce;
+
+        try
+        {
+            await ShowWhatsNewAsync();
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Another dialog was already open; the Updated bar's What's new button still shows it.
+        }
+    }
+
+    private Task ShowWhatsNewAsync() => Dialogs.ShowChangelogAsync(
+        Nav.XamlRoot, "What's new", $"Cinema Guard is now version {CinemaGuard.Core.CoreInfo.Version}.", ViewModel.WhatsNew);
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
