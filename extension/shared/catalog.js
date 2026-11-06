@@ -41,44 +41,58 @@
         CHRIST: ['CHRIST', 'CHRISTS', "CHRIST'S", 'CHRISSAKE', 'CHRISSAKES', 'CHRISTSAKE', 'CHRISTSAKES'],
     };
 
-    // Spellings the families gained after the app's first lists (the app's settings version 4), such as
-    // "Motherfuck!" and "Goddammit". Saved settings from before get them on every list with the root word.
+    // Spellings the families gained after the app's first lists, by the catalog version that added them.
+    // Saved settings from before a version get its spellings on every list with the root word.
     const ADDED = {
-        ASS: ['BADASS', 'BADASSES', 'DUMBASS', 'DUMBASSES', 'FATASS', 'HARDASS', 'JACKASS', 'JACKASSES', 'SMARTASS', 'SMARTASSES'],
-        BITCH: ['BITCHED', 'SONOFABITCH', 'SONUVABITCH'],
-        BULLSHIT: ['BULLSHITS', 'BULLSHITTED', 'BULLSHITTER', 'BULLSHITTERS', 'BULLSHITTING'],
-        COCK: ['COCKSUCKING'],
-        DAMN: ['DAMMIT', 'DAMNED', 'DAMNIT'],
-        DICK: ['DICKFACE', 'DICKWAD', 'DICKWADS'],
-        FUCK: [
-            'DUMBFUCKS', 'FUCKA', 'FUCKALL', 'FUCKAS', 'FUCKTON', 'FUCKTONS', 'FUCKWADS', 'MINDFUCK',
-            'MINDFUCKED', 'MINDFUCKING', 'MINDFUCKS',
-        ],
-        GODDAMN: ['GODDAM', 'GODDAMMIT', 'GODDAMNED', 'GODDAMNIT'],
-        MOTHERFUCKER: [
-            'MOTHERFUCK', 'MOTHERFUCKA', 'MOTHERFUCKAS', 'MOTHERFUCKED', 'MOTHERFUCKS', 'MOTHAFUCKA',
-            'MOTHAFUCKAS', 'MOTHAFUCKER', 'MOTHAFUCKERS', 'MUTHAFUCKA', 'MUTHAFUCKAS', 'MUTHAFUCKER',
-            'MUTHAFUCKERS', 'MUTHERFUCKER', 'MUTHERFUCKERS',
-        ],
-        SHIT: [
-            'APESHIT', 'BATSHIT', 'CHICKENSHIT', 'CHICKENSHITS', 'DIPSHIT', 'DIPSHITS', 'HORSESHIT', 'SHITE',
-            'SHITES', 'SHITLESS', 'SHITTED', 'SHITTER', 'SHITTERS', 'SHITTIN', 'SHITTING',
-        ],
+        // The app's settings version 4: "Motherfuck!", "Goddammit" and the like.
+        2: {
+            ASS: ['BADASS', 'BADASSES', 'DUMBASS', 'DUMBASSES', 'FATASS', 'HARDASS', 'JACKASS', 'JACKASSES', 'SMARTASS', 'SMARTASSES'],
+            BITCH: ['BITCHED', 'SONOFABITCH', 'SONUVABITCH'],
+            BULLSHIT: ['BULLSHITS', 'BULLSHITTED', 'BULLSHITTER', 'BULLSHITTERS', 'BULLSHITTING'],
+            COCK: ['COCKSUCKING'],
+            DAMN: ['DAMMIT', 'DAMNED', 'DAMNIT'],
+            DICK: ['DICKFACE', 'DICKWAD', 'DICKWADS'],
+            FUCK: [
+                'DUMBFUCKS', 'FUCKA', 'FUCKALL', 'FUCKAS', 'FUCKTON', 'FUCKTONS', 'FUCKWADS', 'MINDFUCK',
+                'MINDFUCKED', 'MINDFUCKING', 'MINDFUCKS',
+            ],
+            GODDAMN: ['GODDAM', 'GODDAMMIT', 'GODDAMNED', 'GODDAMNIT'],
+            MOTHERFUCKER: [
+                'MOTHERFUCK', 'MOTHERFUCKA', 'MOTHERFUCKAS', 'MOTHERFUCKED', 'MOTHERFUCKS', 'MOTHAFUCKA',
+                'MOTHAFUCKAS', 'MOTHAFUCKER', 'MOTHAFUCKERS', 'MUTHAFUCKA', 'MUTHAFUCKAS', 'MUTHAFUCKER',
+                'MUTHAFUCKERS', 'MUTHERFUCKER', 'MUTHERFUCKERS',
+            ],
+            SHIT: [
+                'APESHIT', 'BATSHIT', 'CHICKENSHIT', 'CHICKENSHITS', 'DIPSHIT', 'DIPSHITS', 'HORSESHIT', 'SHITE',
+                'SHITES', 'SHITLESS', 'SHITTED', 'SHITTER', 'SHITTERS', 'SHITTIN', 'SHITTING',
+            ],
+        },
+        // The app's settings version 5: misspellings captions use. Punctuation stuck to a word (F*CK-UP, F*CK'D,
+        // CHRIST') needs no entry, as find() already matches across it.
+        3: {
+            FUCK: ['FUCIN', 'FUCKEN', 'FUKIN'],
+            JESUS: ['JEEZ'],
+            SHIT: ['SHITTEST'],
+        },
     };
 
-    // The catalog version saved with the settings; ADDED came with version 2.
-    const VERSION = 2;
+    // The catalog version saved with the settings: the newest in ADDED.
+    const VERSION = 3;
 
-    const family = root => [...(FAMILIES[root] || [root]), ...(ADDED[root] || [])];
+    const family = root => [...(FAMILIES[root] || [root]), ...Object.values(ADDED).flatMap(added => added[root] || [])];
 
-    // Settings saved before ADDED: a list with a family's root word gets its new spellings, unless on a list already.
-    function addNewSpellings(wordsFull, wordsSingle) {
+    // Settings saved before a version in ADDED: a list with a family's root word gets the spellings added since,
+    // unless on a list already.
+    function addNewSpellings(wordsFull, wordsSingle, savedVersion = 1) {
         const full = [...wordsFull];
         const single = [...wordsSingle];
-        for (const [root, added] of Object.entries(ADDED)) {
-            for (const words of [full, single]) {
-                if (!words.includes(root)) continue;
-                for (const word of added) if (!full.includes(word) && !single.includes(word)) words.push(word);
+        for (const [version, spellings] of Object.entries(ADDED)) {
+            if (Number(version) <= savedVersion) continue;
+            for (const [root, added] of Object.entries(spellings)) {
+                for (const words of [full, single]) {
+                    if (!words.includes(root)) continue;
+                    for (const word of added) if (!full.includes(word) && !single.includes(word)) words.push(word);
+                }
             }
         }
         return { wordsFull: full, wordsSingle: single };

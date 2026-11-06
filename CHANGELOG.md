@@ -10,6 +10,7 @@ own list in [extension/CHANGELOG.md](extension/CHANGELOG.md).
 ## Unreleased
 
 - What's new: Settings → About lists the changes in every release, and the first start after an update shows what is new since the version you had.
+- The word families gain misspellings subtitles use: F*CIN, F*KIN, F*CKEN, SH*TTEST and JEEZ. Saved word lists that have the family get them too.
 
 ## 2026.11.06.1 — 6 November 2026
 

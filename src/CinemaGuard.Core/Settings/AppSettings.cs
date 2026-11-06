@@ -21,7 +21,7 @@ public enum DownmixMode { Plain, CenterWeighted }
 /// </summary>
 public sealed class AppSettings
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public bool FirstRun { get; set; } = true;
@@ -216,8 +216,8 @@ public sealed class AppSettings
             if (!RunMultilingualPass) SpeechModel = SpeechCatalog.PhononEnglishId;
         }
 
-        // Version 4 added spellings to the word families (Motherfuck, Goddammit, ...).
-        if (SchemaVersion < 4) FilterCatalog.AddNewSpellings(WordsFull, WordsSingle);
+        // Versions 4 and 5 added spellings to the word families (Motherfuck, Goddammit, Fukin, ...).
+        if (SchemaVersion < 5) FilterCatalog.AddNewSpellings(WordsFull, WordsSingle, SchemaVersion);
 
         SchemaVersion = CurrentSchemaVersion;
 

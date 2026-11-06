@@ -60,13 +60,18 @@ public static class FilterCatalog
             _ => [root],
         };
 
-        return AddedInVersion4.TryGetValue(root, out var added) ? [.. family, .. added] : family;
+        return [.. family, .. AddedSince.SelectMany(set => set.Spellings.TryGetValue(root, out var added) ? added : [])];
     }
+
+    /// <summary>The spellings each settings version added to the families, oldest first.</summary>
+    private static IEnumerable<(int Version, IReadOnlyDictionary<string, string[]> Spellings)> AddedSince =>
+        [(4, AddedInVersion4), (5, AddedInVersion5)];
 
     /// <summary>
     /// Spellings a family gained after the old app's lists (settings version 4): forms subtitles use that the
     /// lists missed, such as "Motherfuck!" and "Goddammit". Settings saved before then get them on every list
-    /// that has the family's root word (see <see cref="AddNewSpellings"/>).
+    /// that has the family's root word (see <see cref="AddNewSpellings"/>). Later additions go in their own
+    /// version's set, listed in <see cref="AddedSince"/>.
     /// </summary>
     internal static IReadOnlyDictionary<string, string[]> AddedInVersion4 { get; } = new Dictionary<string, string[]>
     {
@@ -100,19 +105,36 @@ public static class FilterCatalog
     };
 
     /// <summary>
-    /// Settings from before version 4: a list that has a family's root word gets the spellings added since.
-    /// A spelling already on either list stays where it is.
+    /// Misspellings subtitles use that Petrus Vermaak had to add by hand over the years (settings version 5),
+    /// such as F*KIN and SH*TTEST. Punctuation stuck to a word (F*CK-UP, F*CK'D, CHRIST') needs no entry:
+    /// <see cref="Subtitles.SwearMatcher"/> already matches across it.
     /// </summary>
-    internal static void AddNewSpellings(List<string> wordsFull, List<string> wordsSingle)
+    internal static IReadOnlyDictionary<string, string[]> AddedInVersion5 { get; } = new Dictionary<string, string[]>
     {
-        foreach (var (root, added) in AddedInVersion4)
-        {
-            foreach (var words in new[] { wordsFull, wordsSingle })
-            {
-                if (!words.Contains(root)) continue;
+        ["FUCK"] = ["FUCIN", "FUCKEN", "FUKIN"],
+        ["JESUS"] = ["JEEZ"],
+        ["SHIT"] = ["SHITTEST"],
+    };
 
-                foreach (var word in added)
-                    if (!wordsFull.Contains(word) && !wordsSingle.Contains(word)) words.Add(word);
+    /// <summary>
+    /// Settings saved before the newest spellings: a list that has a family's root word gets the spellings
+    /// added after <paramref name="savedVersion"/>. A spelling already on either list stays where it is.
+    /// </summary>
+    internal static void AddNewSpellings(List<string> wordsFull, List<string> wordsSingle, int savedVersion)
+    {
+        foreach (var (version, spellings) in AddedSince)
+        {
+            if (version <= savedVersion) continue;
+
+            foreach (var (root, added) in spellings)
+            {
+                foreach (var words in new[] { wordsFull, wordsSingle })
+                {
+                    if (!words.Contains(root)) continue;
+
+                    foreach (var word in added)
+                        if (!wordsFull.Contains(word) && !wordsSingle.Contains(word)) words.Add(word);
+                }
             }
         }
     }

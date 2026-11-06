@@ -72,7 +72,7 @@
         let wordsSingle = matcher.cleanEntries(Array.isArray(raw.wordsSingle) ? raw.wordsSingle : DEFAULTS.wordsSingle);
 
         if (!(Number(raw.catalogVersion) >= catalog.VERSION))
-            ({ wordsFull, wordsSingle } = catalog.addNewSpellings(wordsFull, wordsSingle));
+            ({ wordsFull, wordsSingle } = catalog.addNewSpellings(wordsFull, wordsSingle, Number(raw.catalogVersion) || 1));
 
         const hosts = list => [...new Set((Array.isArray(list) ? list : []).map(host => String(host).trim().toLowerCase()).filter(Boolean))];
 
@@ -111,7 +111,8 @@
             incoming = {
                 wordsFull: incoming.WordsFull,
                 wordsSingle: incoming.WordsSingle,
-                catalogVersion: incoming.SchemaVersion >= 4 ? catalog.VERSION : 1,
+                // The app's settings versions 4 and 5 brought catalogs 2 and 3.
+                catalogVersion: incoming.SchemaVersion >= 5 ? 3 : incoming.SchemaVersion >= 4 ? 2 : 1,
                 censorCharacter: incoming.CensorCharacter,
                 fadeMs: incoming.MuteFadeMs,
                 pads: {

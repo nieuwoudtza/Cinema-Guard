@@ -122,7 +122,7 @@ test('settings are checked and imported', () => {
     assert.equal(odd.censorCharacter, '*');
     assert.deepEqual(odd.languages, ['en']);
 
-    const app = settings.importSettings({ WordsFull: ['JESUS'], WordsSingle: ['GOD'], CensorCharacter: ' ', WordPadBeforeMs: 100, MuteFadeMs: 60 }, defaults);
+    const app = settings.importSettings({ SchemaVersion: 5, WordsFull: ['JESUS'], WordsSingle: ['GOD'], CensorCharacter: ' ', WordPadBeforeMs: 100, MuteFadeMs: 60 }, defaults);
     assert.deepEqual([app.wordsFull, app.wordsSingle, app.censorCharacter, app.pads.wordBefore, app.pads.lineAfter, app.fadeMs], [['JESUS'], ['GOD'], ' ', 100, 500, 60]);
     assert.equal(defaults.fadeMs, 30);
     assert.equal(settings.normalise({ fadeMs: 9000 }).fadeMs, 500);
@@ -152,6 +152,27 @@ test('lists saved before the new spellings get them', () => {
 
     const oldApp = settings.importSettings({ SchemaVersion: 3, WordsSingle: ['MOTHERFUCKER'] }, defaults);
     assert.ok(oldApp.wordsSingle.includes('MOTHERFUCK'));
+
+    // Saved with catalog 2: only the spellings added since, so one taken off then stays off.
+    const two = settings.normalise({ wordsFull: ['JESUS'], wordsSingle: ['FUCK', 'SHIT'], catalogVersion: 2 });
+    assert.ok(two.wordsFull.includes('JEEZ') && two.wordsSingle.includes('FUKIN') && two.wordsSingle.includes('SHITTEST'));
+    assert.ok(!two.wordsSingle.includes('MINDFUCK'));
+
+    const appFour = settings.importSettings({ SchemaVersion: 4, WordsSingle: ['FUCK'] }, defaults);
+    assert.ok(appFour.wordsSingle.includes('FUCKEN') && !appFour.wordsSingle.includes('MINDFUCK'));
+    const appFive = settings.importSettings({ SchemaVersion: 5, WordsSingle: ['FUCK'] }, defaults);
+    assert.deepEqual(appFive.wordsSingle, ['FUCK']);
+});
+
+test('the spellings Petrus added by hand are matched', () => {
+    const words = [...defaults.wordsFull, ...defaults.wordsSingle, ...catalog.family('SHIT')];
+    const handAdded = [
+        'JEEZ', "CHRIST'", 'FUCKIN’', 'FUCK’D', 'FUCK’D-UP', 'FUCK-UP', 'FUCK-UPS', 'FUCK-ALL',
+        'FUCK-OFF', 'FUCK-OFF!', 'FUCK-FACE', 'FUCK-HEAD', 'FUCKOFF!', 'FUCK,', 'FUCK.', 'FUCK-UP,', 'FUCK-UP.',
+        'FUCKER.', 'FUCKING.', 'FUCK!', 'FUCIN', 'FUKIN', 'FUCKEN', 'SHITTEST',
+    ];
+    for (const word of handAdded)
+        assert.ok(matcher.find(matcher.formatCue(`Oh, ${word} that`), words).length > 0, `${word} is not matched`);
 });
 
 test('blanking keeps the line length', () => {

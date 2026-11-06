@@ -70,6 +70,59 @@ public class SettingsTests
         Assert.Equal(["MOTHERFUCKER"], current.WordsSingle);
     }
 
+    /// <summary>The spellings Petrus Vermaak had to add to the old app by hand, as subtitles write them.</summary>
+    [Theory]
+    [InlineData("JEEZ")]
+    [InlineData("CHRIST'")]
+    [InlineData("FUCKIN’")]
+    [InlineData("FUCK’D")]
+    [InlineData("FUCK’D-UP")]
+    [InlineData("FUCK-UP")]
+    [InlineData("FUCK-UPS")]
+    [InlineData("FUCK-ALL")]
+    [InlineData("FUCK-OFF")]
+    [InlineData("FUCK-OFF!")]
+    [InlineData("FUCK-FACE")]
+    [InlineData("FUCK-HEAD")]
+    [InlineData("FUCKOFF!")]
+    [InlineData("FUCK,")]
+    [InlineData("FUCK.")]
+    [InlineData("FUCK-UP,")]
+    [InlineData("FUCK-UP.")]
+    [InlineData("FUCKER.")]
+    [InlineData("FUCKING.")]
+    [InlineData("FUCK!")]
+    [InlineData("FUCIN")]
+    [InlineData("FUKIN")]
+    [InlineData("FUCKEN")]
+    [InlineData("SHITTEST")]
+    public void HandAddedSpellingsAreMatched(string word)
+    {
+        var settings = AppSettings.CreateDefault();
+        FilterCatalog.EnableFamily(settings.WordsSingle, "SHIT", true);
+
+        var text = SubtitleFormatter.FormatCue($"Oh, {word} that", keepMasks: true);
+
+        Assert.NotEmpty(SwearMatcher.Find(text, [.. settings.WordsFull, .. settings.WordsSingle]));
+    }
+
+    [Fact]
+    public void SettingsFromVersion4GetOnlyTheSpellingsAddedSince()
+    {
+        var old = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(
+            """{ "SchemaVersion": 4, "WordsFull": ["JESUS"], "WordsSingle": ["FUCK", "SHIT"] }""",
+            AppSettings.JsonOptions)!;
+        old.Normalise();
+
+        Assert.Equal(AppSettings.CurrentSchemaVersion, old.SchemaVersion);
+        Assert.Contains("JEEZ", old.WordsFull);
+        Assert.Contains("FUKIN", old.WordsSingle);
+        Assert.Contains("SHITTEST", old.WordsSingle);
+
+        // Version 4's spellings were offered then; one the user took off stays off.
+        Assert.DoesNotContain("MINDFUCK", old.WordsSingle);
+    }
+
     [Fact]
     public void FilterFamiliesToggleEveryAssociatedWord()
     {

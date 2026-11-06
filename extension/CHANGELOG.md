@@ -9,6 +9,7 @@ Each version is a `## <version> — <date>` heading followed by one `- ` line pe
 ## Unreleased
 
 - What's new: the options page lists the changes in every version, and the popup says when the extension was updated.
+- The word families gain misspellings captions use: F*CIN, F*KIN, F*CKEN, SH*TTEST and JEEZ. Saved word lists that have the family get them too, as do settings imported from the Windows app.
 
 ## 1.0.2 — 6 November 2026
 
