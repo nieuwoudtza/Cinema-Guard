@@ -70,6 +70,9 @@ public sealed partial class MediaItemViewModel : ObservableObject
 
     public bool HasRemaining => RemainingText.Length > 0;
     [ObservableProperty] private string _sourceBadge = "No subtitles";
+
+    /// <summary>Which subtitles exactly, on hover over the badge.</summary>
+    [ObservableProperty] private string _sourceToolTip = string.Empty;
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _hitText = string.Empty;
     [ObservableProperty] private Visibility _hitsVisibility = Visibility.Collapsed;
@@ -123,6 +126,12 @@ public sealed partial class MediaItemViewModel : ObservableObject
         SourceBadge = string.IsNullOrWhiteSpace(Item.SubtitleSource) || Item.SubtitleSource == "None"
             ? "No subtitles"
             : Item.SubtitleSource;
+
+        SourceToolTip = Item.SubtitleDetail is { } detail
+            ? "Subtitles: " + detail
+            : SourceBadge == "No subtitles"
+                ? "No subtitle file found. A track inside the video is read when you press Censor; right-click and Choose subtitle track… to pick one."
+                : "The subtitles this file uses. Right-click and Choose subtitle track… to use a track inside the video instead.";
 
         HitCount = Item.HitCount;
         HitText = HitCount == 1 ? "1 word" : $"{HitCount} words";

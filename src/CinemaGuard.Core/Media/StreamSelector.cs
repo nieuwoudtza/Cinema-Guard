@@ -42,6 +42,18 @@ public static class StreamSelector
             .ThenBy(s => s.Index)
             .ToList();
 
+    /// <summary>The track chosen for the file when it is still a text track in it, else the best one for the language.</summary>
+    public static MediaStreamInfo? SelectSubtitle(MediaProbe probe, string preferredLanguage, int? chosenIndex, out string? reason)
+    {
+        if (chosenIndex is { } index && probe.SubtitleStreams.FirstOrDefault(s => s.Index == index && s.IsTextSubtitle) is { } chosen)
+        {
+            reason = null;
+            return chosen;
+        }
+
+        return SelectSubtitle(probe, preferredLanguage, out reason);
+    }
+
     public static MediaStreamInfo? SelectSubtitle(MediaProbe probe, string preferredLanguage, out string? reason)
     {
         var ranked = RankSubtitles(probe, preferredLanguage);

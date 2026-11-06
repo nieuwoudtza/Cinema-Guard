@@ -162,6 +162,15 @@ public sealed class MediaItem
     public bool ExtractSubtitles { get; set; } = true;
     public string SubtitleSource { get; set; } = "None";
 
+    /// <summary>The subtitle track inside the video chosen for this file (its stream index); null lets the preferred language pick.</summary>
+    public int? SubtitleStreamIndex { get; set; }
+
+    /// <summary>Which subtitles exactly, in words ("track 3 inside the video: eng, SubRip, “SDH”"); shown on the badge's tooltip.</summary>
+    public string? SubtitleDetail { get; set; }
+
+    /// <summary>What the last run worked from, a line each: subtitles, speech model, word matching, audio. Shown in Peek.</summary>
+    public List<string> RunDetails { get; set; } = [];
+
     /// <summary>
     /// The subtitles a run will find beside the film, in the order the pipeline looks for them, so the
     /// queue badge is right before the first run. A track inside the video is only known after the probe.

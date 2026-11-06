@@ -37,6 +37,39 @@ public sealed class MediaStreamInfo
 
     public bool IsBitmapSubtitle => IsSubtitle && !IsTextSubtitle;
 
+    /// <summary>A track as a person reads it: "eng, SubRip, “SDH”, hearing impaired, default".</summary>
+    public string Describe()
+    {
+        var parts = new List<string> { string.IsNullOrWhiteSpace(Language) ? "no language" : Language };
+
+        if (IsAudio)
+        {
+            parts.Add(CodecName.ToUpperInvariant());
+            if (!string.IsNullOrWhiteSpace(ChannelLayout)) parts.Add(ChannelLayout);
+            else if (Channels is not null) parts.Add($"{Channels} channels");
+        }
+        else
+        {
+            parts.Add(CodecName.ToLowerInvariant() switch
+            {
+                "subrip" or "srt" => "SubRip",
+                "ass" or "ssa" => "ASS",
+                "mov_text" => "MP4 text",
+                "webvtt" => "WebVTT",
+                "hdmv_pgs_subtitle" => "PGS image",
+                "dvd_subtitle" => "VobSub image",
+                _ => CodecName,
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(Title)) parts.Add($"“{Title}”");
+        if (IsHearingImpaired) parts.Add("hearing impaired");
+        if (IsComment) parts.Add("commentary");
+        if (IsForced) parts.Add("forced");
+        if (IsDefault) parts.Add("default");
+        return string.Join(", ", parts);
+    }
+
     public string Display =>
         $"{CodecType} #{Index} {CodecName}" +
         (Channels is not null ? $" {Channels}ch" : string.Empty) +
@@ -62,6 +95,10 @@ public sealed class MediaProbe
 
     public int AudioOrdinal(MediaStreamInfo stream) =>
         AudioStreams.TakeWhile(s => s.Index != stream.Index).Count();
+
+    /// <summary>The track's number among the subtitle tracks, from 1, as players list them.</summary>
+    public int SubtitleNumber(MediaStreamInfo stream) =>
+        SubtitleStreams.TakeWhile(s => s.Index != stream.Index).Count() + 1;
 
     public IReadOnlyList<string> Summary()
     {

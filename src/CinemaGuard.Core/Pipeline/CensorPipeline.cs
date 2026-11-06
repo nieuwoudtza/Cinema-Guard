@@ -174,8 +174,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         using var work = WorkFolder.Create(settings.KeepWorkFiles);
 
         SetStatus(item, "Looking for subtitles");
-        var (subtitleCues, subtitleSource) = await LoadSubtitlesAsync(item, probe, settings, ffmpeg, work, cancellationToken);
+        var (subtitleCues, subtitleSource, subtitleDetail) = await LoadSubtitlesAsync(item, probe, settings, ffmpeg, work, cancellationToken);
         item.SubtitleSource = subtitleSource;
+        item.SubtitleDetail = subtitleDetail;
+        item.RunDetails = [];
 
         PhononResult? english = null;
         PhononResult? multilingual = null;
@@ -236,6 +238,18 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         item.Hits = hits;
         item.SyncFit = hits.Fit;
+
+        if (item.SubtitleDetail is null && item.SubtitleSource != "None")
+            item.SubtitleDetail = item.SubtitleSource == "Generated" ? "made from the speech model's transcript" : item.SubtitleSource.ToLowerInvariant();
+
+        item.RunDetails.Add("Subtitles: " + (item.SubtitleDetail ?? "none"));
+        item.RunDetails.Add("Speech model: " + DescribeTranscript(settings, english, fileProgress.Has(PrimaryPassStep)));
+        item.RunDetails.Add("Word matching: " + DescribeMatching(settings, hits, english, subtitleCues));
+
+        // A word with no length mutes nothing; say so rather than count it as muted.
+        var unmuted = hits.Hits.Where(hit => hit.End - hit.Start < 0.02).ToList();
+        foreach (var hit in unmuted)
+            Log.Warn(string.Create(CultureInfo.InvariantCulture, $"{item.Stem}: \"{hit.Label}\" at {hit.Start:0.000} s ({hit.Source}) has no length and is not muted."));
 
         foreach (var word in hits.Trimmed ?? [])
             Log.Info(string.Create(CultureInfo.InvariantCulture,
@@ -315,9 +329,17 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                     filterScript = work.File("mute.txt");
                     MuteFilterWriter.Write(filterScript, audio.Ordinal, ranges, settings.MuteFadeMs / 1000.0);
                 }
+
+                var whyWhole = WholeTrackReason(settings, audio, english, vocals);
+                if (whyWhole is not null) notes.Add($"Muted the whole track at each word: {whyWhole}.");
+
+                item.RunDetails.Add($"Audio: {DescribeAudio(probe, audio)}; " + (vocals
+                    ? "only the channels carrying the words were muted"
+                    : "the whole track was muted at each word" + (whyWhole is null ? string.Empty : $" ({whyWhole})")));
             }
             else
             {
+                item.RunDetails.Add($"Audio: {DescribeAudio(probe, audio)}; nothing to mute, copied unchanged");
                 if (settings.MuteVocalsOnly) Log.Info($"{item.Stem}: no filtered words, vocals-only mode not needed.");
 
                 // Nothing to mute: the audio is copied, not re-encoded.
@@ -419,6 +441,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         var summary = hits.Ranges.Count == 0
             ? "No filtered words were heard; copied without mutes."
             : $"{hits.Hits.Count} filtered word{(hits.Hits.Count == 1 ? string.Empty : "s")} in {hits.Ranges.Count} range{(hits.Ranges.Count == 1 ? string.Empty : "s")}.";
+
+        if (unmuted.Count > 0)
+            summary += $" {unmuted.Count} of them had no length to mute (the log lists them).";
 
         if (english?.Truncated == true) summary += " The transcript was truncated; some words may be missing.";
         if (item.FallbackNote is not null) summary += " " + item.FallbackNote;
@@ -866,25 +891,32 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         return carried;
     }
 
-    private async Task<(List<Cue>? Cues, string Source)> LoadSubtitlesAsync(
+    /// <summary>
+    /// The subtitles to find words in: the file picked for this film, the track picked for it, the .srt
+    /// beside it, then the best track inside it. Detail says which, for the badge and Peek.
+    /// </summary>
+    private async Task<(List<Cue>? Cues, string Source, string? Detail)> LoadSubtitlesAsync(
         MediaItem item, MediaProbe probe, AppSettings settings, string ffmpeg, WorkFolder work, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(item.CustomSubtitlePath) && File.Exists(item.CustomSubtitlePath))
         {
             var cues = TryReadSubtitleFile(item.CustomSubtitlePath);
-            if (cues is not null) return (cues, "Selected file");
+            if (cues is not null) return (cues, "Selected file", $"the file you selected, {Path.GetFileName(item.CustomSubtitlePath)}");
         }
 
-        if (File.Exists(item.SidecarPath))
+        // A track picked for this film beats the .srt beside it; otherwise the .srt comes first.
+        var picked = item.ExtractSubtitles && item.SubtitleStreamIndex is not null;
+
+        if (!picked && File.Exists(item.SidecarPath))
         {
             var cues = TryReadSubtitleFile(item.SidecarPath);
-            if (cues is not null) return (cues, MediaItem.SubtitleFileSource);
+            if (cues is not null) return (cues, MediaItem.SubtitleFileSource, $"{Path.GetFileName(item.SidecarPath)} beside the video");
         }
 
         // Extract subtitles unticked: the track inside the video is left alone.
-        if (!item.ExtractSubtitles) return (null, "None");
+        if (!item.ExtractSubtitles) return (null, "None", null);
 
-        var stream = StreamSelector.SelectSubtitle(probe, settings.PreferredLanguage, out var reason);
+        var stream = StreamSelector.SelectSubtitle(probe, settings.PreferredLanguage, item.SubtitleStreamIndex, out var reason);
 
         if (stream is not null)
         {
@@ -893,7 +925,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             if (extracted is not null)
             {
                 var cues = TryReadSubtitleFile(extracted);
-                if (cues is not null) return (cues, "Embedded");
+                var how = stream.Index == item.SubtitleStreamIndex ? "the one you chose" : "chosen by language";
+                if (cues is not null)
+                    return (cues, $"Embedded #{probe.SubtitleNumber(stream)}",
+                        $"subtitle track {probe.SubtitleNumber(stream)} inside the video ({how}): {stream.Describe()}");
             }
         }
         else if (reason is not null)
@@ -901,10 +936,55 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             Log.Info($"{item.Stem}: {reason}");
         }
 
-        return (null, "None");
+        // The picked track could not be read: the .srt beside the video is still better than nothing.
+        if (picked && File.Exists(item.SidecarPath))
+        {
+            var cues = TryReadSubtitleFile(item.SidecarPath);
+            if (cues is not null) return (cues, MediaItem.SubtitleFileSource, $"{Path.GetFileName(item.SidecarPath)} beside the video");
+        }
+
+        return (null, "None", null);
     }
 
     private static bool HasTextSubtitleTrack(MediaProbe probe) => probe.SubtitleStreams.Any(stream => stream.IsTextSubtitle);
+
+    // ---------------------------------------------------------------- what the run worked from, for Peek
+
+    internal static string DescribeTranscript(AppSettings settings, PhononResult? english, bool transcribedNow)
+    {
+        if (english is null) return "not used (Generate subtitles is off and there is no saved transcript)";
+
+        var names = string.Join(" + ", SpeechService.Plan(settings).Passes.Select(pass => pass.DisplayName));
+        return transcribedNow ? $"{names}, transcribed in this run" : $"{names}, the transcript saved from an earlier run";
+    }
+
+    internal static string DescribeMatching(AppSettings settings, HitSet hits, PhononResult? english, List<Cue>? subtitleCues)
+    {
+        if (hits.Alignment is { } alignment)
+            return $"{alignment.MatchedWords:N0} of {alignment.SubtitleWords:N0} subtitle words matched to the speech model ({alignment.MatchedShare * 100:0} %); " +
+                   "a word only the subtitles have is timed between the spoken words around it";
+
+        if (english is null || subtitleCues is not { Count: > 0 })
+            return "not done; it needs both subtitles and the speech model's transcript";
+
+        return settings.AlignSubtitleFiles
+            ? "the subtitles did not match the speech (another language or another cut?), so a word only they have is placed by where it sits in its line"
+            : "off in the settings";
+    }
+
+    internal static string DescribeAudio(MediaProbe probe, AudioSelection audio) =>
+        $"track {audio.Ordinal + 1} of {probe.AudioStreams.Count()}, {audio.Stream.Describe()}";
+
+    /// <summary>Why "Mute only the dialogue channels" fell back to the whole track; null when it was off or worked.</summary>
+    internal static string? WholeTrackReason(AppSettings settings, AudioSelection audio, PhononResult? english, bool vocals)
+    {
+        if (!settings.MuteVocalsOnly || vocals) return null;
+
+        var layout = string.IsNullOrWhiteSpace(audio.Stream.ChannelLayout) ? $"{audio.Stream.Channels ?? 0}-channel" : audio.Stream.ChannelLayout;
+        if (!ChannelLayouts.CanSplitVocals(audio.Stream.ChannelLayout)) return $"the {layout} track has no separate dialogue channel";
+        if (english is null) return "muting only the dialogue channels needs the speech model's transcript";
+        return "the dialogue channels could not be read";
+    }
 
     private static List<Cue>? TryReadSubtitleFile(string path)
     {

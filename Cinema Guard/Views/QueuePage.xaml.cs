@@ -360,6 +360,53 @@ public sealed partial class QueuePage : Page
         if (file is not null) ViewModel.SetCustomSubtitle(target, file.Path);
     }
 
+    private async void ChooseTrack_Click(object sender, RoutedEventArgs e)
+    {
+        var target = ContextRow();
+        if (target is null) return;
+
+        var (probe, error) = await ViewModel.ProbeAsync(target);
+        if (probe is null)
+        {
+            await Dialogs.MessageAsync(XamlRoot, "Subtitle track", error ?? "The file could not be read.");
+            return;
+        }
+
+        var automatic = StreamSelector.SelectSubtitle(probe, ViewModel.Settings.PreferredLanguage, out _);
+        var sidecar = File.Exists(target.Item.SidecarPath) ? Path.GetFileName(target.Item.SidecarPath) : null;
+
+        var (ok, index) = await Dialogs.ChooseSubtitleTrackAsync(
+            XamlRoot, target.FileName, probe, automatic?.Index, target.Item.SubtitleStreamIndex, sidecar);
+
+        if (ok) ViewModel.SetSubtitleTrack(target, probe, index);
+    }
+
+    private async void Listen_Click(object sender, RoutedEventArgs e)
+    {
+        var target = ContextRow();
+        if (target is null) return;
+
+        var (probe, error) = await ViewModel.ProbeAsync(target);
+        if (probe is null || !probe.AudioStreams.Any())
+        {
+            await Dialogs.MessageAsync(XamlRoot, "Listen to channels", error ?? "This file has no audio track.");
+            return;
+        }
+
+        var (tracks, chosen) = ViewModel.ListenTracks(probe);
+
+        try
+        {
+            await Dialogs.ListenToChannelsAsync(
+                XamlRoot, target.FileName, tracks, chosen, probe.DurationSeconds,
+                (ordinal, channel, start, token) => ViewModel.PrepareListeningAsync(target, ordinal, channel, start, token));
+        }
+        finally
+        {
+            MainViewModel.CleanupListening();
+        }
+    }
+
     // ---------------------------------------------------------------- peek / report
 
     private async void Peek_Click(object sender, RoutedEventArgs e)

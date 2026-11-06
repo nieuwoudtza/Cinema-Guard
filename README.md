@@ -148,7 +148,19 @@ Build and pack an update release:
   with a one-minute countdown that can be cancelled. It is chosen per run and never saved; Stop
   never triggers it.
 - **Peek** (the hit count) lists words, counts, exact times, and whether each came from the English
-  model, the multilingual model, the subtitle file, or the source's own masking.
+  model, the multilingual model, the subtitle file, or the source's own masking. Once a file is
+  censored it also says what the run worked from: which subtitles (the file, or which track inside
+  the video), the speech model and whether it transcribed or reused a saved transcript, how many
+  subtitle words were matched to it, and the audio track and whether only its dialogue channels
+  were muted. Hovering the subtitle badge shows the same for the subtitles.
+- **Choose subtitle track…** (right-click) lists the subtitle tracks inside the video and picks the
+  one to read, ahead of an `.srt` beside it. Automatic picks by the preferred language.
+- **Listen to channels…** (right-click) plays 20 seconds of each audio channel on its own, from a
+  chosen time, to hear which channels carry the dialogue.
+- **Restore** (Tools page) puts back the original audio of a film censored with "Keep the original
+  audio": a copy beside it (`Movie_Restored.mkv`) without the muted track, nothing re-encoded.
+- **Exact word only** (Settings → Filter) sets the single-word padding and the fade to 0. A word
+  only the subtitles have still mutes its share of its line, so it never collapses to nothing.
 
 Output is `<name><affix>.<mp4|mkv>` (default `Movie_CG.mp4`). Beside the video, only:
 

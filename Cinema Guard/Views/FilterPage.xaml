@@ -29,7 +29,7 @@
                         <StackPanel Spacing="10">
                             <TextBlock Text="Mute the whole sentence" Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock Text="Blasphemy and insults: the entire line is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
-                            <Button Content="Select all / none" Click="ToggleAllFull_Click" HorizontalAlignment="Left" />
+                            <Button Content="Select all / none" Click="ToggleAllFull_Click" HorizontalAlignment="Left" ToolTipService.ToolTip="Tick every word on this list, or untick them all when they are all ticked" />
                             <StackPanel x:Name="FullWordsPanel" Spacing="0" />
                             <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
                             <TextBox
@@ -46,7 +46,7 @@
                         <StackPanel Spacing="10">
                             <TextBlock Text="Mute the word only" Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock Text="Everyday swearing: only the spoken word is silenced." Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
-                            <Button Content="Select all / none" Click="ToggleAllSingle_Click" HorizontalAlignment="Left" />
+                            <Button Content="Select all / none" Click="ToggleAllSingle_Click" HorizontalAlignment="Left" ToolTipService.ToolTip="Tick every word on this list, or untick them all when they are all ticked" />
                             <StackPanel x:Name="SingleWordsPanel" Spacing="0" />
                             <TextBlock Text="Additional words or phrases (one per line)" Style="{StaticResource MutedStyle}" Margin="0,10,0,0" />
                             <TextBox
@@ -69,7 +69,7 @@
             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock x:Name="Status" Style="{StaticResource MutedStyle}" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="Save" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
+                <Button Grid.Column="1" Content="Save" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" ToolTipService.ToolTip="Keep these words for the next films you censor" />
             </Grid>
         </Border>
     </Grid>

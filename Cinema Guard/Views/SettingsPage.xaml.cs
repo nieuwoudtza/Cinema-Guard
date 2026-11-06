@@ -71,6 +71,18 @@ public sealed partial class SettingsPage : Page
 
     private void EditFilter_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(FilterPage));
 
+    private void ExactWord_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.UseExactWordTiming();
+        SaveStatus.Text = "Exact word only: the single-word padding and the fade are 0. Save settings to keep it.";
+    }
+
+    private void RecommendedWord_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.UseRecommendedWordTiming();
+        SaveStatus.Text = "The single-word padding and the fade are back to the recommended values. Save settings to keep them.";
+    }
+
     private void OpenTools_Click(object sender, RoutedEventArgs e) => App.Shell?.NavigateTo("tools");
 
     private void ChangeModel_Click(object sender, RoutedEventArgs e) => App.Shell?.NavigateTo("models");

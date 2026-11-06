@@ -146,6 +146,15 @@
                                 <Button Content="Edit filter" Click="EditFilter_Click" />
                             </controls:SettingRow>
 
+                            <controls:SettingRow
+                                Header="Exact word only"
+                                Description="Mute only the word itself: sets the extra mute for single words, and the fade, to 0. The whole-sentence padding below is left alone. Recommended puts the usual values back. Press Save settings to keep either.">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Exact word" Click="ExactWord_Click" ToolTipService.ToolTip="Set the single-word padding and the fade to 0" />
+                                    <Button Content="Recommended" Click="RecommendedWord_Click" ToolTipService.ToolTip="Set the single-word padding and the fade back to the recommended values" />
+                                </StackPanel>
+                            </controls:SettingRow>
+
                             <!-- Extra silence added either side of each mute, in milliseconds. -->
                             <controls:SettingRow
                                 Header="Extra mute: single word the speech model heard"
@@ -229,11 +238,11 @@
                     <TextBlock Text="AUDIO" Style="{StaticResource SectionHeaderStyle}" />
                     <Border Style="{StaticResource CardBorderStyle}">
                         <StackPanel>
-                            <controls:SettingRow Header="Mute only the dialogue channels" Description="Vocals-only mode: rebuild the surround mix with the centre and bleed channels silenced where the words are.">
+                            <controls:SettingRow Header="Mute only the dialogue channels" Description="Vocals-only mode: rebuild the surround mix with the centre and bleed channels silenced where the words are. The audio is checked for each film: a track without a separate dialogue channel (stereo, mono) has the whole track muted at each word instead, and Peek says which was done. To hear what each channel carries, right-click a film in the queue and choose Listen to channels.">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.S.MuteVocalsOnly, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                             </controls:SettingRow>
 
-                            <controls:SettingRow Header="Keep the original audio" Description="Add the untouched track as a second audio stream.">
+                            <controls:SettingRow Header="Keep the original audio" Description="Add the untouched track as a second audio stream. Restore on the Tools page puts it back: it makes a copy of the film with the original audio in place of the muted track.">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.S.KeepOriginalAudio, Mode=TwoWay}" OnContent="On" OffContent="Off" />
                             </controls:SettingRow>
 

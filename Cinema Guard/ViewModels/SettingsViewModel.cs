@@ -165,6 +165,25 @@ public sealed partial class SettingsViewModel(SettingsService service, SpeechSer
         set { S.MuteFadeMs = (int)Math.Round(value); OnPropertyChanged(); }
     }
 
+    /// <summary>Exact word only: no extra mute either side of a single word, and no fade. The sentence padding stays.</summary>
+    public void UseExactWordTiming()
+    {
+        WordPadBefore = WordPadAfter = 0;
+        EstimatedPadBefore = EstimatedPadAfter = 0;
+        MuteFade = 0;
+    }
+
+    /// <summary>The recommended extra mute for single words and the recommended fade.</summary>
+    public void UseRecommendedWordTiming()
+    {
+        var defaults = AppSettings.CreateDefault();
+        WordPadBefore = defaults.WordPadBeforeMs;
+        WordPadAfter = defaults.WordPadAfterMs;
+        EstimatedPadBefore = defaults.EstimatedPadBeforeMs;
+        EstimatedPadAfter = defaults.EstimatedPadAfterMs;
+        MuteFade = defaults.MuteFadeMs;
+    }
+
     public (bool Ok, string Message) Save()
     {
         var problems = S.Validate();

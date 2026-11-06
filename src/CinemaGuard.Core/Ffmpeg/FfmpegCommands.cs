@@ -97,6 +97,22 @@ public static class FfmpegCommands
         "-ar", "16000", "-c:a", "pcm_s16le", targetPath,
     ];
 
+    /// <summary>
+    /// A stretch of one channel as a wav to listen to, played through both speakers; the whole track,
+    /// folded to stereo, when <paramref name="channel"/> is null. A channel is named (FC) or, in a layout
+    /// FFmpeg does not name, numbered (c2).
+    /// </summary>
+    public static IReadOnlyList<string> ChannelPreview(string inputPath, int audioOrdinal, string? channel, double startSeconds, double seconds, string targetPath) =>
+    [
+        "-hide_banner", "-nostdin", "-y",
+        "-ss", startSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+        "-t", seconds.ToString("0.###", CultureInfo.InvariantCulture),
+        "-i", inputPath,
+        "-map", $"0:a:{audioOrdinal}", "-vn", "-sn", "-dn",
+        .. channel is null ? new[] { "-ac", "2" } : ["-af", $"pan=stereo|c0={channel}|c1={channel}"],
+        "-c:a", "pcm_s16le", targetPath,
+    ];
+
     public static IReadOnlyList<string> ExtractSubtitle(string inputPath, int streamIndex, string targetPath) =>
     [
         "-hide_banner", "-nostdin", "-y", "-i", inputPath,

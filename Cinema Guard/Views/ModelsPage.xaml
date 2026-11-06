@@ -83,8 +83,8 @@
                         <TextBlock Text="{x:Bind StateText, Mode=OneWay}" VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <Button Content="Download" Click="Download_Click" Visibility="{x:Bind ShowDownload, Mode=OneWay}" />
-                    <Button Content="Set up…" Click="SetUp_Click" Visibility="{x:Bind ShowSetUp, Mode=OneWay}" />
+                    <Button Content="Download" Click="Download_Click" Visibility="{x:Bind ShowDownload, Mode=OneWay}" ToolTipService.ToolTip="Download this model once; it stays on this PC" />
+                    <Button Content="Set up…" Click="SetUp_Click" Visibility="{x:Bind ShowSetUp, Mode=OneWay}" ToolTipService.ToolTip="Fill in the details this model needs before it can be used" />
 
                     <Button
                         Style="{StaticResource TransparentButtonStyle}"
@@ -205,7 +205,7 @@
                                                 <FontIcon Glyph="&#xE73E;" FontSize="13" Foreground="{ThemeResource SystemFillColorSuccessBrush}" VerticalAlignment="Center" />
                                                 <TextBlock Text="Installed" VerticalAlignment="Center" />
                                             </StackPanel>
-                                            <Button Content="Download" Click="EngineDownload_Click" Visibility="{x:Bind ShowDownload, Mode=OneWay}" />
+                                            <Button Content="Download" Click="EngineDownload_Click" Visibility="{x:Bind ShowDownload, Mode=OneWay}" ToolTipService.ToolTip="Download this engine once; it stays on this PC" />
                                             <Button Style="{StaticResource TransparentButtonStyle}" Padding="6,4" Click="EngineDelete_Click" AutomationProperties.Name="Delete engine" Visibility="{x:Bind ShowDelete, Mode=OneWay}" ToolTipService.ToolTip="Delete">
                                                 <FontIcon Glyph="&#xE74D;" FontSize="14" />
                                             </Button>

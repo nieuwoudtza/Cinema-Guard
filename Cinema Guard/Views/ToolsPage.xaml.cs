@@ -104,6 +104,60 @@ public sealed partial class ToolsPage : Page
         }
     }
 
+    private async void Restore_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.VideosLibrary, ViewMode = PickerViewMode.List };
+        foreach (var extension in CinemaGuard.Core.Media.FileTypes.MediaExtensions) picker.FileTypeFilter.Add(extension);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowHelper.GetHandle(App.Shell));
+
+        var files = await picker.PickMultipleFilesAsync();
+        if (files is null || files.Count == 0) return;
+
+        var locator = App.Services.GetRequiredService<ToolLocator>();
+        var settings = App.Settings.Current;
+        var ffmpeg = locator.ResolveFfmpeg(settings);
+        var ffprobe = locator.ResolveFfprobe(settings, ffmpeg);
+
+        if (ffmpeg is null || ffprobe is null)
+        {
+            Show(InfoBarSeverity.Error, "Restore", "FFmpeg is missing. Press Set up above to install it.");
+            return;
+        }
+
+        RestoreButton.IsEnabled = false;
+        var messages = new System.Collections.Generic.List<string>();
+        var restored = 0;
+
+        try
+        {
+            for (var i = 0; i < files.Count; i++)
+            {
+                Show(InfoBarSeverity.Informational, "Restoring", $"{files[i].Name} ({i + 1} of {files.Count})…");
+
+                try
+                {
+                    var result = await CinemaGuard.Core.Media.AudioRestorer.RestoreAsync(
+                        _runner, ffmpeg, ffprobe, files[i].Path, AppSettings.SanitiseAffix(settings.CustomAffix), default);
+
+                    messages.Add(result.Message);
+                    if (result.Ok) restored++;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Could not restore {files[i].Path}", ex);
+                    messages.Add($"{files[i].Name}: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            RestoreButton.IsEnabled = true;
+        }
+
+        Show(restored == files.Count ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
+            $"Restored {restored} of {files.Count}", string.Join("\n", messages));
+    }
+
     private async void Import_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FolderPicker { SuggestedStartLocation = PickerLocationType() };

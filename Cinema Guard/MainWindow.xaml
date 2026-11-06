@@ -34,22 +34,22 @@
             ItemInvoked="Nav_ItemInvoked">
 
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Queue" Tag="queue">
+                <NavigationViewItem Content="Queue" Tag="queue" ToolTipService.ToolTip="The films to censor">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8FD;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Filter" Tag="filter">
+                <NavigationViewItem Content="Filter" Tag="filter" ToolTipService.ToolTip="The words to mute">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE71C;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Models" Tag="models">
+                <NavigationViewItem Content="Models" Tag="models" ToolTipService.ToolTip="The speech model that listens to the films">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE720;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Tools" Tag="tools">
+                <NavigationViewItem Content="Tools" Tag="tools" ToolTipService.ToolTip="FFmpeg and the other tools, restoring the original audio, and importing old settings">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE90F;" />
                     </NavigationViewItem.Icon>

@@ -50,4 +50,33 @@ public static class ChannelLayouts
     }
 
     public static bool HasFrontCenter(string? layout) => ChannelsFor(layout)?.Contains("FC") == true;
+
+    /// <summary>A track's channels by name, or numbered c0, c1… when its layout has no names.</summary>
+    public static IReadOnlyList<string> ChannelsOf(MediaStreamInfo stream) =>
+        ChannelsFor(stream.ChannelLayout) ?? Enumerable.Range(0, stream.Channels ?? 0).Select(i => $"c{i}").ToArray();
+
+    /// <summary>"Centre (FC)", "Channel 3" for a numbered one.</summary>
+    public static string Describe(string channel)
+    {
+        var name = channel switch
+        {
+            "FL" => "Front left",
+            "FR" => "Front right",
+            "FC" => "Centre",
+            "LFE" => "Subwoofer",
+            "BL" => "Back left",
+            "BR" => "Back right",
+            "BC" => "Back centre",
+            "SL" => "Side left",
+            "SR" => "Side right",
+            "FLC" => "Front left of centre",
+            "FRC" => "Front right of centre",
+            "DL" => "Downmix left",
+            "DR" => "Downmix right",
+            _ => null,
+        };
+
+        if (name is not null) return $"{name} ({channel})";
+        return channel.Length > 1 && channel[0] == 'c' && int.TryParse(channel[1..], out var number) ? $"Channel {number + 1}" : channel;
+    }
 }

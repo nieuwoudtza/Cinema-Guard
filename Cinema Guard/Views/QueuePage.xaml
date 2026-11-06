@@ -38,6 +38,7 @@
                     Style="{StaticResource AccentButtonStyle}"
                     Click="Start_Click"
                     AutomationProperties.Name="Censor"
+                    ToolTipService.ToolTip="Censor every file in the queue, one after another. Each gets a muted copy beside it."
                     Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE768;" FontSize="14" />
@@ -48,6 +49,7 @@
                 <Button
                     Click="Stop_Click"
                     AutomationProperties.Name="Stop"
+                    ToolTipService.ToolTip="Stop the queue. The file being worked on is cancelled and its unfinished output deleted."
                     Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE71A;" FontSize="14" />
@@ -66,14 +68,14 @@
             VerticalScrollMode="Disabled"
             VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button Style="{StaticResource TransparentButtonStyle}" Click="AddFiles_Click" AutomationProperties.Name="Add files">
+                <Button Style="{StaticResource TransparentButtonStyle}" Click="AddFiles_Click" AutomationProperties.Name="Add files" ToolTipService.ToolTip="Add video or audio files to the queue. You can also drop them here.">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE8E5;" FontSize="14" />
                         <TextBlock Text="Add files" />
                     </StackPanel>
                 </Button>
 
-                <Button Style="{StaticResource TransparentButtonStyle}" Click="AddFolder_Click" AutomationProperties.Name="Add folder">
+                <Button Style="{StaticResource TransparentButtonStyle}" Click="AddFolder_Click" AutomationProperties.Name="Add folder" ToolTipService.ToolTip="Add every video in a folder, and its subfolders if you like">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE8B7;" FontSize="14" />
                         <TextBlock Text="Add folder" />
@@ -131,8 +133,8 @@
             Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
             <StackPanel Orientation="Horizontal" Spacing="2">
                 <Button Style="{StaticResource TransparentButtonStyle}" Click="SelectAll_Click" Content="Select all" ToolTipService.ToolTip="Select every file (Ctrl+A)" />
-                <Button Style="{StaticResource TransparentButtonStyle}" Click="SelectNone_Click" Content="Select none" />
-                <Button Style="{StaticResource TransparentButtonStyle}" Click="InvertSelection_Click" Content="Invert selection" />
+                <Button Style="{StaticResource TransparentButtonStyle}" Click="SelectNone_Click" Content="Select none" ToolTipService.ToolTip="Deselect every file" />
+                <Button Style="{StaticResource TransparentButtonStyle}" Click="InvertSelection_Click" Content="Invert selection" ToolTipService.ToolTip="Select the files that are not selected, and deselect the rest" />
             </StackPanel>
 
             <TextBlock
@@ -205,13 +207,15 @@
                     <!-- Works on the row right-clicked (or the selection, when that row is in it).
                          Items tagged "idle" change the queue, so they are hidden while media is being processed. -->
                     <MenuFlyout Opening="ContextMenu_Opening">
-                        <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" />
-                        <MenuFlyoutItem Text="Language report" Click="LanguageReport_Click" />
+                        <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" ToolTipService.ToolTip="The filtered words found, and what the last run worked from" />
+                        <MenuFlyoutItem Text="Language report" Click="LanguageReport_Click" ToolTipService.ToolTip="Dialogue the multilingual pass heard in other languages" />
+                        <MenuFlyoutItem Text="Listen to channels…" Click="Listen_Click" ToolTipService.ToolTip="Play each audio channel on its own, to hear which ones carry the dialogue" />
                         <MenuFlyoutSeparator Tag="idle" />
-                        <MenuFlyoutItem Tag="idle" Text="Save subtitles as .srt" Click="ExtractMenu_Click" />
-                        <MenuFlyoutItem Tag="idle" Text="Download subtitles" Click="DownloadMenu_Click" />
-                        <MenuFlyoutItem Tag="idle" Text="Generate subtitles" Click="GenerateMenu_Click" />
-                        <MenuFlyoutItem Tag="idle" Text="Select subtitles…" Click="SelectSubtitles_Click" />
+                        <MenuFlyoutItem Tag="idle" Text="Save subtitles as .srt" Click="ExtractMenu_Click" ToolTipService.ToolTip="Copy the subtitle track inside the video to an .srt file beside it" />
+                        <MenuFlyoutItem Tag="idle" Text="Download subtitles" Click="DownloadMenu_Click" ToolTipService.ToolTip="Download subtitles from OpenSubtitles to an .srt file beside the video" />
+                        <MenuFlyoutItem Tag="idle" Text="Generate subtitles" Click="GenerateMenu_Click" ToolTipService.ToolTip="Transcribe the dialogue with the speech model when you press Censor" />
+                        <MenuFlyoutItem Tag="idle" Text="Choose subtitle track…" Click="ChooseTrack_Click" ToolTipService.ToolTip="See the subtitle tracks inside the video and pick the one to use" />
+                        <MenuFlyoutItem Tag="idle" Text="Select subtitles…" Click="SelectSubtitles_Click" ToolTipService.ToolTip="Use a subtitle file from anywhere, with any name" />
                         <MenuFlyoutSeparator />
                         <MenuFlyoutItem Text="Open folder" Click="OpenFolder_Click" />
                         <MenuFlyoutItem Text="Remove" Click="RemoveMenu_Click" />
@@ -246,7 +250,8 @@
                                                 Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                                 CornerRadius="4"
                                                 Padding="6,1"
-                                                VerticalAlignment="Top">
+                                                VerticalAlignment="Top"
+                                                ToolTipService.ToolTip="{x:Bind SourceToolTip, Mode=OneWay}">
                                                 <TextBlock Text="{x:Bind SourceBadge, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />
                                             </Border>
                                             <TextBlock
@@ -315,7 +320,7 @@
                                         Click="Peek_Click"
                                         AutomationProperties.Name="{x:Bind HitText, Mode=OneWay}"
                                         Visibility="{x:Bind HitsVisibility, Mode=OneWay}"
-                                        ToolTipService.ToolTip="Show the filtered words">
+                                        ToolTipService.ToolTip="Show the filtered words, and which subtitles, speech model and audio channels were used">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE721;" FontSize="14" />
                                             <TextBlock Text="{x:Bind HitText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />

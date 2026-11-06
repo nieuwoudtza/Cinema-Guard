@@ -28,7 +28,11 @@ namespace Cinema_Guard.ViewModels;
 
 public sealed record PeekRow(string Word, int Count, string Times);
 
-public sealed record PeekContent(string Header, string Subtitle, IReadOnlyList<PeekRow> Rows);
+/// <param name="Details">What the run worked from ("Subtitles: …", "Audio: …"); empty before the file has been censored.</param>
+public sealed record PeekContent(string Header, string Subtitle, IReadOnlyList<PeekRow> Rows, IReadOnlyList<string> Details);
+
+/// <summary>An audio track for Listen to channels: its place among the audio tracks, a description, its channels.</summary>
+public sealed record ListenTrack(int Ordinal, string Label, IReadOnlyList<string> Channels);
 
 public enum GenerateMode { All, Missing, None }
 
@@ -275,9 +279,109 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         item.Item.CustomSubtitlePath = path;
+        item.Item.SubtitleStreamIndex = null;
         item.Item.SubtitleSource = "Selected file";
+        item.Item.SubtitleDetail = $"the file you selected, {Path.GetFileName(path)}";
         item.GenerateSubtitles = false;
         item.Sync();
+    }
+
+    /// <summary>Reads the file's tracks with FFprobe; the error in words when it cannot.</summary>
+    public async Task<(MediaProbe? Probe, string? Error)> ProbeAsync(MediaItemViewModel target)
+    {
+        var ffprobe = _locator.ResolveFfprobe(Settings);
+        if (ffprobe is null) return (null, "FFmpeg is missing. Open Tools and press Set up to install it.");
+
+        var result = await _runner.RunAsync(new ProcessSpec(ffprobe, FfmpegCommands.Probe(target.Item.InputPath)));
+        if (!result.Success) return (null, "FFprobe could not read the file.");
+
+        try
+        {
+            return (MediaProbeParser.Parse(result.StdOut, target.Item.InputPath), null);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not read the tracks of {target.FileName}: {ex.Message}");
+            return (null, "FFprobe could not read the file.");
+        }
+    }
+
+    /// <summary>
+    /// Uses the subtitle track <paramref name="streamIndex"/> inside the video for this file, ahead of an .srt
+    /// beside it; null goes back to choosing by the preferred language.
+    /// </summary>
+    public void SetSubtitleTrack(MediaItemViewModel target, MediaProbe probe, int? streamIndex)
+    {
+        if (IsBusy) return;
+
+        var item = target.Item;
+        item.SubtitleStreamIndex = streamIndex;
+
+        if (streamIndex is not null && probe.SubtitleStreams.FirstOrDefault(s => s.Index == streamIndex) is { } stream)
+        {
+            var number = probe.SubtitleNumber(stream);
+            item.CustomSubtitlePath = null;
+            target.ExtractSubtitles = true;
+            item.SubtitleSource = $"Embedded #{number}";
+            item.SubtitleDetail = $"subtitle track {number} inside the video (the one you chose): {stream.Describe()}";
+        }
+        else
+        {
+            item.SubtitleSource = item.SubtitleSourceOnDisk();
+            item.SubtitleDetail = null;
+        }
+
+        target.Sync();
+    }
+
+    // ---------------------------------------------------------------- listen to channels
+
+    private static string ListenFolder => Path.Combine(WorkFolder.Root, "listen");
+
+    /// <summary>The file's audio tracks with their channels, the one Censor would use first.</summary>
+    public (IReadOnlyList<ListenTrack> Tracks, int Chosen) ListenTracks(MediaProbe probe)
+    {
+        var tracks = probe.AudioStreams
+            .Select((stream, ordinal) => new ListenTrack(ordinal, $"Track {ordinal + 1}: {stream.Describe()}", ChannelLayouts.ChannelsOf(stream)))
+            .ToList();
+
+        var chosen = StreamSelector.SelectAudio(probe, Settings.PreferredLanguage)?.Ordinal ?? 0;
+        return (tracks, chosen);
+    }
+
+    /// <summary>
+    /// Twenty seconds of one channel (or the whole track when <paramref name="channel"/> is null) from
+    /// <paramref name="startSeconds"/>, as a wav to play; null when FFmpeg could not make it.
+    /// </summary>
+    public async Task<string?> PrepareListeningAsync(MediaItemViewModel target, int audioOrdinal, string? channel, double startSeconds, CancellationToken cancellationToken)
+    {
+        var ffmpeg = _locator.ResolveFfmpeg(Settings);
+        if (ffmpeg is null) return null;
+
+        Directory.CreateDirectory(ListenFolder);
+        var path = Path.Combine(ListenFolder, $"{Guid.NewGuid():N}.wav");
+
+        var result = await _runner.RunAsync(
+            new ProcessSpec(ffmpeg, FfmpegCommands.ChannelPreview(target.Item.InputPath, audioOrdinal, channel, startSeconds, 20, path)),
+            cancellationToken: cancellationToken);
+
+        if (result.Success && File.Exists(path)) return path;
+
+        if (!result.Cancelled) Log.Warn($"Could not prepare {channel ?? "the whole track"} of {target.FileName}: {result.StdErr.Trim()}");
+        return null;
+    }
+
+    /// <summary>Removes the clips Listen to channels made. Never throws.</summary>
+    public static void CleanupListening()
+    {
+        try
+        {
+            if (Directory.Exists(ListenFolder)) Directory.Delete(ListenFolder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"Could not remove the listening clips: {ex.Message}");
+        }
     }
 
     public void OpenFolder(MediaItemViewModel item)
@@ -677,7 +781,13 @@ public sealed partial class MainViewModel : ObservableObject
             if (set.Fit.Accepted) subtitle += $" · subtitles retimed ({(set.Fit.Slope - 1) * 100:+0.0;-0.0} %, {set.Fit.Intercept:+0.00;-0.00} s)";
             if (set.Alignment is { } alignment) subtitle += $" · {alignment.MatchedShare * 100:0} % of subtitle words matched";
 
-            return new PeekContent(item.Stem, subtitle, rows);
+            // Before a run, only the subtitles on disk were read: say so instead of describing a run that did not happen.
+            var details = ReferenceEquals(set, item.Hits)
+                ? item.RunDetails.ToList()
+                : ["Not censored yet: these are the words in the subtitles alone. Press Censor to see which subtitles, " +
+                   "speech model and audio channels the run uses."];
+
+            return new PeekContent(item.Stem, subtitle, rows, details);
         }
 
         static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";

@@ -47,6 +47,32 @@ public static class Dialogs
     {
         var body = new StackPanel { Spacing = 10, MinWidth = 520 };
 
+        // What the run worked from, "Subtitles: …" with the part before the colon in bold.
+        if (content.Details.Count > 0)
+        {
+            var details = new StackPanel { Spacing = 4 };
+
+            foreach (var line in content.Details)
+            {
+                var text = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                var colon = line.IndexOf(": ", StringComparison.Ordinal);
+
+                if (colon > 0)
+                {
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line[..(colon + 1)], FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line[(colon + 1)..] });
+                }
+                else
+                {
+                    text.Text = line;
+                }
+
+                details.Children.Add(text);
+            }
+
+            body.Children.Add(details);
+        }
+
         body.Children.Add(new TextBlock
         {
             Text = content.Subtitle,
@@ -426,6 +452,237 @@ public static class Dialogs
             string.IsNullOrEmpty(key.Password) ? null : key.Password,
             double.IsNaN(cap.Value) ? 0 : (int)Math.Round(cap.Value),
             answer == ContentDialogResult.Primary);
+    }
+
+    /// <summary>
+    /// The subtitle tracks inside a video, to pick the one Cinema Guard reads. Returns false when cancelled;
+    /// otherwise the chosen track's stream index, or null for Automatic (by the preferred language).
+    /// </summary>
+    public static async Task<(bool Ok, int? StreamIndex)> ChooseSubtitleTrackAsync(
+        XamlRoot root, string fileName, CinemaGuard.Core.Media.MediaProbe probe, int? automatic, int? current, string? sidecar)
+    {
+        var muted = (Style)Application.Current.Resources["MutedStyle"];
+        var body = new StackPanel { Spacing = 12, MaxWidth = 480 };
+        var tracks = probe.SubtitleStreams.ToList();
+
+        var intro = automatic is { } auto && tracks.FirstOrDefault(s => s.Index == auto) is { } best
+            ? $"Automatic picks track {probe.SubtitleNumber(best)}: the best one in your preferred language (Settings, Files)."
+            : "Automatic finds no text track in your preferred language (Settings, Files).";
+
+        if (sidecar is not null) intro += $" {sidecar} beside the video is used instead, unless you pick a track here.";
+        body.Children.Add(new TextBlock { Text = intro, TextWrapping = TextWrapping.Wrap });
+
+        if (tracks.Count == 0)
+        {
+            body.Children.Add(new TextBlock { Text = "This video has no subtitle tracks.", Style = muted });
+        }
+
+        var choices = new RadioButtons();
+        choices.Items.Add(new RadioButton { Content = "Automatic", Tag = null });
+
+        foreach (var track in tracks)
+        {
+            var label = $"Track {probe.SubtitleNumber(track)}: {track.Describe()}";
+            if (track.IsBitmapSubtitle) label += " (an image track, which cannot be read)";
+            choices.Items.Add(new RadioButton { Content = label, Tag = track.Index, IsEnabled = track.IsTextSubtitle });
+        }
+
+        var selected = current is null ? 0 : tracks.FindIndex(s => s.Index == current) + 1;
+        choices.SelectedIndex = Math.Max(0, selected);
+        body.Children.Add(choices);
+
+        body.Children.Add(new TextBlock
+        {
+            Text = "Picking a track also ticks Extract subtitles for this file. Peek shows the track used once the file is censored.",
+            TextWrapping = TextWrapping.Wrap,
+            Style = muted,
+        });
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = $"Subtitle track — {fileName}",
+            Content = new ScrollViewer { Content = body, MaxHeight = 560 },
+            PrimaryButtonText = "Use this track",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return (false, null);
+        return (true, (choices.SelectedItem as RadioButton)?.Tag as int?);
+    }
+
+    /// <summary>
+    /// Plays twenty seconds of each audio channel on its own, to hear which carry the dialogue.
+    /// <paramref name="prepare"/> makes the clip (track ordinal, channel or null for the whole track, start seconds).
+    /// </summary>
+    public static async Task ListenToChannelsAsync(
+        XamlRoot root,
+        string fileName,
+        IReadOnlyList<ListenTrack> tracks,
+        int chosenTrack,
+        double durationSeconds,
+        Func<int, string?, double, System.Threading.CancellationToken, Task<string?>> prepare)
+    {
+        var muted = (Style)Application.Current.Resources["MutedStyle"];
+        var body = new StackPanel { Spacing = 12, MinWidth = 460, MaxWidth = 520 };
+        var player = new Windows.Media.Playback.MediaPlayer();
+        var cancel = new System.Threading.CancellationTokenSource();
+        Button? playing = null;
+
+        body.Children.Add(new TextBlock
+        {
+            Text = "Play each channel on its own for 20 seconds. Dialogue usually sits in the centre; " +
+                   "Mute only the dialogue channels (Settings, Audio) mutes the channels that carry the words.",
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var trackBox = new ComboBox { Header = "Audio track", HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var track in tracks) trackBox.Items.Add(track.Label);
+        trackBox.SelectedIndex = Math.Clamp(chosenTrack, 0, Math.Max(0, tracks.Count - 1));
+        if (tracks.Count > 1) body.Children.Add(trackBox);
+        else if (tracks.Count == 1) body.Children.Add(new TextBlock { Text = tracks[0].Label, Style = muted, TextWrapping = TextWrapping.Wrap });
+
+        // A tenth of the way in, on the minute: past the opening titles, usually into the talking.
+        var defaultStart = TimeSpan.FromMinutes(Math.Floor(durationSeconds / 10 / 60));
+        var start = new TextBox { Header = "Start at (h:mm:ss)", Text = defaultStart.ToString(@"h\:mm\:ss"), Width = 160, HorizontalAlignment = HorizontalAlignment.Left };
+        body.Children.Add(start);
+
+        var status = new TextBlock { Style = muted, TextWrapping = TextWrapping.Wrap };
+        var channels = new StackPanel { Spacing = 4 };
+        body.Children.Add(channels);
+        body.Children.Add(status);
+
+        void Stopped()
+        {
+            if (playing is not null) playing.Content = "Play";
+            playing = null;
+        }
+
+        player.MediaEnded += (_, _) => body.DispatcherQueue.TryEnqueue(() =>
+        {
+            Stopped();
+            status.Text = "Finished.";
+        });
+
+        void ShowChannels()
+        {
+            channels.Children.Clear();
+            if (trackBox.SelectedIndex < 0 || trackBox.SelectedIndex >= tracks.Count) return;
+
+            var track = tracks[trackBox.SelectedIndex];
+            foreach (var channel in track.Channels.Cast<string?>().Append(null))
+                channels.Children.Add(Row(track.Ordinal, channel));
+        }
+
+        Grid Row(int ordinal, string? channel)
+        {
+            var label = channel is null ? "The whole track" : CinemaGuard.Core.Media.ChannelLayouts.Describe(channel);
+            var grid = new Grid { ColumnSpacing = 12 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var name = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            if (channel is null) name.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+
+            var button = new Button { Content = "Play", MinWidth = 72 };
+            ToolTipService.SetToolTip(button, channel is null ? "Play the track as it normally sounds" : $"Play only the {label} channel, through both speakers");
+
+            button.Click += async (_, _) =>
+            {
+                var again = playing == button;
+                player.Pause();
+                Stopped();
+                if (again) { status.Text = "Stopped."; return; }
+
+                if (ParseTime(start.Text) is not { } from)
+                {
+                    status.Text = "Type the start as h:mm:ss, such as 0:12:30.";
+                    return;
+                }
+
+                button.IsEnabled = false;
+                status.Text = $"Preparing {label}…";
+
+                try
+                {
+                    var path = await prepare(ordinal, channel, from.TotalSeconds, cancel.Token);
+                    if (path is null)
+                    {
+                        status.Text = $"Could not read {label}. The log has FFmpeg's message.";
+                        return;
+                    }
+
+                    player.Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(path));
+                    player.Play();
+                    playing = button;
+                    button.Content = "Stop";
+                    status.Text = $"Playing {label} from {from:h\\:mm\\:ss}.";
+                }
+                catch (OperationCanceledException)
+                {
+                    // The dialog was closed while the clip was made.
+                }
+                finally
+                {
+                    button.IsEnabled = true;
+                }
+            };
+
+            grid.Children.Add(name);
+            Grid.SetColumn(button, 1);
+            grid.Children.Add(button);
+            return grid;
+        }
+
+        trackBox.SelectionChanged += (_, _) =>
+        {
+            player.Pause();
+            Stopped();
+            ShowChannels();
+        };
+
+        ShowChannels();
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = $"Listen to channels — {fileName}",
+            Content = new ScrollViewer { Content = body, MaxHeight = 600 },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            cancel.Cancel();
+            player.Pause();
+            player.Source = null;
+            player.Dispose();
+            cancel.Dispose();
+        }
+    }
+
+    /// <summary>"1:02:03", "12:30" (minutes and seconds) or "90" (seconds).</summary>
+    internal static TimeSpan? ParseTime(string text)
+    {
+        var parts = text.Trim().Split(':');
+        if (parts.Length is 0 or > 3) return null;
+
+        double seconds = 0;
+        foreach (var part in parts)
+        {
+            if (!double.TryParse(part, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) || value < 0)
+                return null;
+
+            seconds = seconds * 60 + value;
+        }
+
+        return TimeSpan.FromSeconds(seconds);
     }
 
     public static async Task MessageAsync(XamlRoot root, string title, string message)

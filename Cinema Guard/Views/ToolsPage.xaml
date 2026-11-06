@@ -110,8 +110,9 @@
                                     Style="{StaticResource AccentButtonStyle}"
                                     Content="Set up Cinema Guard"
                                     Click="Setup_Click"
-                                    IsEnabled="{x:Bind ViewModel.CanSetup, Mode=OneWay}" />
-                                <Button Content="Choose a different model" Click="Models_Click" />
+                                    IsEnabled="{x:Bind ViewModel.CanSetup, Mode=OneWay}"
+                                    ToolTipService.ToolTip="Download FFmpeg and the recommended speech model" />
+                                <Button Content="Choose a different model" Click="Models_Click" ToolTipService.ToolTip="Open the Models page to pick another speech model" />
                             </StackPanel>
 
                             <TextBlock
@@ -174,6 +175,7 @@
                     <Button
                         Content="Check again"
                         Click="Recheck_Click"
+                        ToolTipService.ToolTip="Look for each tool again, after installing or moving one"
                         HorizontalAlignment="Left"
                         IsEnabled="{x:Bind ViewModel.CanCheck, Mode=OneWay}" />
 
@@ -194,6 +196,15 @@
                                 </StackPanel>
                             </controls:SettingRow>
                         </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="RESTORE" Style="{StaticResource SectionHeaderStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <controls:SettingRow
+                            Header="Restore the original audio"
+                            Description="Pick films Cinema Guard censored with Keep the original audio on (Settings, Audio). Each gets a copy beside it with the original audio in place of the muted track: Film_CG.mkv becomes Film_Restored.mkv. Nothing is re-encoded, and the censored file is left as it is. The subtitles stay masked.">
+                            <Button x:Name="RestoreButton" Content="Restore…" Click="Restore_Click" />
+                        </controls:SettingRow>
                     </Border>
 
                     <TextBlock Text="IMPORT" Style="{StaticResource SectionHeaderStyle}" />

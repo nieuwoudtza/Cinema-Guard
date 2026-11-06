@@ -15,9 +15,11 @@
             <TextBlock x:Name="DescriptionText" Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource MutedStyle}" TextWrapping="Wrap" />
         </StackPanel>
 
+        <!-- Hovering the control shows what it does; a control with its own tooltip shows that one instead. -->
         <ContentPresenter
             Grid.Column="1"
             Content="{x:Bind Body, Mode=OneWay}"
+            ToolTipService.ToolTip="{x:Bind Description, Mode=OneWay}"
             VerticalAlignment="Center"
             HorizontalAlignment="Right" />
     </Grid>
