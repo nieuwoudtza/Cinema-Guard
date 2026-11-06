@@ -138,6 +138,21 @@ public class HitCollectorTests
     }
 
     [Fact]
+    public void WithNoPaddingASubtitleWordStillMutesItsShareOfTheLine()
+    {
+        // Issue #3: every padding 0 used to give the estimate no length, so it muted nothing.
+        var cue = new Cue { StartSeconds = 10, EndSeconds = 12, Text = "FUCK THIS" };
+        var options = new HitCollectorOptions([], ["FUCK"], 0, 0, 0, 0);
+
+        var hit = Assert.Single(HitCollector.FromSubtitles([cue], SyncFit.Identity, options, []));
+
+        // "FUCK" is 4 of the 9 characters: 0.889 s of the 2 s line, from its start.
+        Assert.Equal(10, hit.Start, 3);
+        Assert.Equal(10.889, hit.End, 3);
+        Assert.Single(HitCollector.BuildRanges([hit], 20, 0));
+    }
+
+    [Fact]
     public void ADriftedSubtitleWordIsComparedWhereTheFitPutsIt()
     {
         // The subtitles run 5 s early: the line at 10-12 s is spoken at 15-17 s.

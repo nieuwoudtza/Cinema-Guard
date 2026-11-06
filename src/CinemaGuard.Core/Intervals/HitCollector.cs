@@ -58,6 +58,10 @@ public static class HitCollector
     private const double MergeGapSeconds = 0.05;
     private const double MinimumRangeSeconds = 0.02;
 
+    // The shortest and longest a subtitle word's own share of its line may be, when no padding widens it.
+    private const double MinimumWordSeconds = 0.2;
+    private const double MaximumWordSeconds = 1.0;
+
     public static HitSet Collect(
         HitCollectorOptions options,
         double duration,
@@ -306,6 +310,18 @@ public static class HitCollector
             spoken = fit.Map(start);
             from = spoken - estimatedPadBefore;
             to = fit.Map(end) + estimatedPadAfter;
+        }
+
+        // With no padding a word placed at a single moment (its middle, or a gap the neighbours closed)
+        // would mute nothing: it gets its share of the line, around that moment. A word the model timed keeps its own length.
+        if (to - from < MinimumWordSeconds)
+        {
+            var least = Math.Clamp(match.Length / (double)formatted.Length * (cue.End.TotalSeconds - cue.Start.TotalSeconds),
+                MinimumWordSeconds, MaximumWordSeconds);
+
+            var middle = (from + to) / 2;
+            from = middle - least / 2;
+            to = middle + least / 2;
         }
 
         // Phonon already timed this word precisely; the subtitle adds nothing. Compared on the transcript's

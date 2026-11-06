@@ -34,6 +34,22 @@ public class WordAlignerTests
     }
 
     [Fact]
+    public void WithNoPaddingAWordInAClosedGapStillMutes()
+    {
+        // Issue #3: the model ran "the" straight into "out", leaving the masked word no time between them.
+        var cues = new List<Cue> { Cue(10, 16, "I told you to get the f*** out of my house right now") };
+        var words = "I told you to get the out of my house right now".Split(' ')
+            .Select((word, i) => new PhononWord { Start = 10 + 0.4 * i, End = 10 + 0.4 * (i + 1), Text = word });
+        var options = new HitCollectorOptions([], [], 0, 0, 0, 0);
+
+        var hit = Assert.Single(HitCollector.Collect(options, 600, 0, Transcript(words), null, cues, null, alignSubtitles: true).Hits);
+
+        // Its share of the line (4 of 52 characters of 6 s) around the end of "the" at 12.4 s.
+        Assert.Equal(12.4, (hit.Start + hit.End) / 2, 3);
+        Assert.Equal(0.462, hit.End - hit.Start, 3);
+    }
+
+    [Fact]
     public void AWordTheModelHeardAsAnotherIsTimedFromTheTranscript()
     {
         var cues = new List<Cue> { Cue(20, 21.5, "Come in, sit down."), Cue(21.6, 24.5, "What the fuck is going on here?") };

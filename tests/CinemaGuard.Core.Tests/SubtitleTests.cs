@@ -234,6 +234,16 @@ public class CensoredSubtitleWriterTests
     }
 
     [Fact]
+    public void MasksTheWordAfterAHyphenAndKeepsTheHyphen()
+    {
+        // The old app produced "gypsy****k" here (issue #4).
+        var masked = CensoredSubtitleWriter.Mask("gypsy-fuck", ["FUCK"], '*', out var count);
+
+        Assert.Equal("gypsy-****", masked);
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
     public void MasksEveryOccurrence()
     {
         var masked = CensoredSubtitleWriter.Mask("FUCK this FUCKING thing", ["FUCK"], '#', out var count);
