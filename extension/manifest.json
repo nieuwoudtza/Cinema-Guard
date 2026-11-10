@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Cinema Guard",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Mutes swearing in YouTube videos as it happens, using their captions. Your own word list; also works on other sites.",
   "homepage_url": "https://github.com/nieuwoudtza/Cinema-Guard",
   "minimum_chrome_version": "116",

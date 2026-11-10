@@ -6,10 +6,12 @@ list under What's new, and the popup points to it after an update.
 Each version is a `## <version> — <date>` heading followed by one `- ` line per change. Add changes under
 `## Unreleased`; `publish-extension.ps1` turns that heading into the version it packs.
 
-## Unreleased
+## 1.0.3 — 10 November 2026
 
 - What's new: the options page lists the changes in every version, and the popup says when the extension was updated.
 - The word families gain misspellings captions use: F*CIN, F*KIN, F*CKEN, SH*TTEST and JEEZ. Saved word lists that have the family get them too, as do settings imported from the Windows app.
+- Fixed: YouTube captions sometimes went out of sight by themselves. When YouTube turned them off while a video or an ad loaded, the extension took it as the viewer hiding them; now it only turns them back on.
+- Fixed: with YouTube captions hidden, the C key could not show them again. It now shows and hides them as the CC button does.
 
 ## 1.0.2 — 6 November 2026
 

@@ -179,7 +179,7 @@
 
         tick(engine) {
             const player = this.player();
-            if (player && !this.shorts()) syncCaptions(player, engine);
+            if (player && !this.shorts()) syncCaptions(player, engine, this.isAd());
         },
 
         markers() {
@@ -211,7 +211,7 @@
 
     const subtitlesButton = player => player.querySelector('.ytp-subtitles-button');
     const captionsOn = player => subtitlesButton(player)?.getAttribute('aria-pressed') === 'true';
-    const captionWatch = { key: null, wasOn: false, lastClick: -Infinity, buttonWatched: false };
+    const captionWatch = { key: null, wasOn: false, lastClick: -Infinity, lastMenuClick: -Infinity, buttonWatched: false };
 
     function clickCaptions(player) {
         captionWatch.lastClick = performance.now();
@@ -223,7 +223,7 @@
         return !!button && !button.disabled && button.getAttribute('aria-disabled') !== 'true' && getComputedStyle(button).display !== 'none';
     }
 
-    function syncCaptions(player, engine) {
+    function syncCaptions(player, engine, ad) {
         const settings = engine.settings();
         const session = engine.session();
         const filtering = engine.filtering();
@@ -231,7 +231,8 @@
         watchCaptionButton(engine);
 
         player.classList.toggle('cg-hidden-captions', keepOn && settings.showCaptions === false);
-        if (!session || session.state === 'none' || !captionsAvailable(player)) return;
+        // An ad has its own caption state, which says nothing about the viewer's choice for the video.
+        if (ad || !session || session.state === 'none' || !captionsAvailable(player)) return;
 
         const on = captionsOn(player);
         const settled = performance.now() - captionWatch.lastClick > 2000;
@@ -244,8 +245,10 @@
             return;
         }
 
-        // Turned off some other way while showing (YouTube's C key or its settings menu): kept on, but hidden.
-        if (keepOn && settings.showCaptions && !on && settled && captionWatch.key === session.key && captionWatch.wasOn) {
+        // Turned off in YouTube's settings menu while showing: kept on, but hidden. YouTube also turns captions off by
+        // itself as a video loads; then they are only turned back on, and stay in view.
+        const fromMenu = performance.now() - captionWatch.lastMenuClick < 3000;
+        if (keepOn && settings.showCaptions && !on && settled && fromMenu && captionWatch.key === session.key && captionWatch.wasOn) {
             engine.saveSettings({ showCaptions: false });
             engine.note(session, 'Captions were turned off, so they are kept on out of sight');
         }
@@ -257,26 +260,46 @@
         captionWatch.wasOn = captionsOn(player);
     }
 
-    // The viewer's own CC presses only show or hide the captions while they are kept on.
+    // The viewer's own CC presses (the button or the C key) only show or hide the captions while they are kept on.
     function watchCaptionButton(engine) {
         if (captionWatch.buttonWatched) return;
         captionWatch.buttonWatched = true;
 
+        const keptOn = settings => engine.filtering() && settings.keepCaptionsOn;
+
+        function toggleShown(event) {
+            const settings = engine.settings();
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            engine.saveSettings({ showCaptions: !settings.showCaptions });
+            const session = engine.session();
+            if (session) engine.note(session, settings.showCaptions ? 'Captions hidden; they stay on out of sight' : 'Captions shown');
+        }
+
         window.addEventListener('click', event => {
-            if (!event.isTrusted || !event.target.closest?.('.ytp-subtitles-button')) return;
+            if (!event.isTrusted) return;
+            if (event.target.closest?.('.ytp-settings-menu')) captionWatch.lastMenuClick = performance.now();
+            if (!event.target.closest?.('.ytp-subtitles-button')) return;
             const settings = engine.settings();
             if (!settings || settings.showCaptions === null) return;
 
-            if (engine.filtering() && settings.keepCaptionsOn) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                engine.saveSettings({ showCaptions: !settings.showCaptions });
-                const session = engine.session();
-                if (session) engine.note(session, settings.showCaptions ? 'Captions hidden; they stay on out of sight' : 'Captions shown');
+            if (keptOn(settings)) {
+                toggleShown(event);
             } else {
                 // The button works as usual; its new state is remembered.
                 engine.saveSettings({ showCaptions: !captionsOn(youtube.player()) });
             }
+        }, true);
+
+        // YouTube's C key would turn the captions off underneath, and with them hidden could never show them.
+        window.addEventListener('keydown', event => {
+            if (!event.isTrusted || event.key?.toLowerCase() !== 'c' || event.ctrlKey || event.altKey || event.metaKey) return;
+            const target = event.target;
+            if (target?.isContentEditable || target?.closest?.('input, textarea, select')) return;
+            const settings = engine.settings();
+            const player = youtube.player();
+            if (!settings || settings.showCaptions === null || !keptOn(settings) || youtube.shorts() || !player || !captionsAvailable(player)) return;
+            toggleShown(event);
         }, true);
     }
 
