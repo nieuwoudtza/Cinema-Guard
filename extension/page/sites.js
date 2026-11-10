@@ -211,11 +211,24 @@
 
     const subtitlesButton = player => player.querySelector('.ytp-subtitles-button');
     const captionsOn = player => subtitlesButton(player)?.getAttribute('aria-pressed') === 'true';
-    const captionWatch = { key: null, wasOn: false, lastClick: -Infinity, lastMenuClick: -Infinity, buttonWatched: false };
+    const captionWatch = { key: null, wasOn: false, lastClick: -Infinity, lastMenuClick: -Infinity, buttonWatched: false, startKey: null, startTime: 0 };
 
     function clickCaptions(player) {
         captionWatch.lastClick = performance.now();
         subtitlesButton(player)?.click();
+    }
+
+    // YouTube sets up a video's captions as it starts playing, and turns them on itself for a viewer who keeps them on.
+    // CC pressed before then can leave them on with a track chosen but never drawn, so they are only turned on once
+    // the video has played for a second.
+    function playedAWhile(session) {
+        const video = youtube.video();
+        if (!video) return false;
+        if (captionWatch.startKey !== session.key) {
+            captionWatch.startKey = session.key;
+            captionWatch.startTime = video.currentTime;
+        }
+        return !video.paused && Math.abs(video.currentTime - captionWatch.startTime) >= 1;
     }
 
     function captionsAvailable(player) {
@@ -254,7 +267,8 @@
         }
 
         const wantOn = keepOn || settings.showCaptions;
-        if (on !== wantOn && settled) clickCaptions(player);
+        const played = playedAWhile(session);
+        if (on !== wantOn && settled && (on || played)) clickCaptions(player);
         if (on && settled) reloadIfNotDrawn(player, engine, session);
 
         captionWatch.key = session.key;
@@ -262,7 +276,7 @@
     }
 
     // YouTube sometimes draws nothing with captions on: the CC button pressed, a track chosen, no words on screen.
-    // When the caption file has a line now and none has appeared for a few seconds, YouTube reloads its captions.
+    // When the caption file has a line now and none has appeared for a moment, YouTube reloads its captions.
     const drawWatch = { key: null, since: null, lastReload: -Infinity, reloads: 0 };
 
     function reloadIfNotDrawn(player, engine, session) {
@@ -278,7 +292,7 @@
 
         const now = performance.now();
         drawWatch.since ??= now;
-        if (now - drawWatch.since < 3000 || now - drawWatch.lastReload < 15000 || drawWatch.reloads >= 3) return;
+        if (now - drawWatch.since < 1500 || now - drawWatch.lastReload < 15000 || drawWatch.reloads >= 3) return;
         drawWatch.since = null;
         drawWatch.lastReload = now;
         drawWatch.reloads++;
