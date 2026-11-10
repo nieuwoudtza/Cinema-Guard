@@ -7,10 +7,11 @@ Each release is a `## <version> — <date>` heading followed by one `- ` line pe
 `## Unreleased`; `publish.ps1` turns that heading into the version it releases. The browser extension has its
 own list in [extension/CHANGELOG.md](extension/CHANGELOG.md).
 
-## Unreleased
+## 2026.11.10.1 — 10 November 2026
 
 - What's new: Settings → About lists the changes in every release, and the first start after an update shows what is new since the version you had.
 - The word families gain misspellings subtitles use: F*CIN, F*KIN, F*CKEN, SH*TTEST and JEEZ. Saved word lists that have the family get them too.
+- New setting: Review words before censoring (Settings → Filter). Scan finds the words in every film first; click a film's word count to play each word, see its subtitle line, and untick any the speech model misheard. Censor then mutes the rest, and a word left in stays readable in the subtitles too (#5). With it on, a command-line run (-start, such as MediaPilot's) only scans and hands its files to the window for the review, instead of censoring them unseen.
 
 ## 2026.11.06.1 — 6 November 2026
 

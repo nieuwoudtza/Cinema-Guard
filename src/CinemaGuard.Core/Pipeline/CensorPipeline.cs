@@ -25,13 +25,24 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
     public event Action<MediaItem>? ItemChanged;
 
-    public async Task RunAsync(MediaItem item, AppSettings settings, CancellationToken cancellationToken)
+    public Task RunAsync(MediaItem item, AppSettings settings, CancellationToken cancellationToken) =>
+        RunAsync(item, settings, scanOnly: false, cancellationToken);
+
+    /// <param name="scanOnly">
+    /// Only find the words (Review words before censoring): the file ends <see cref="MediaStatus.Scanned"/>, its
+    /// <see cref="MediaItem.Scan"/> held for the review. Otherwise a file holding a scan is censored from it,
+    /// and any other file goes end to end.
+    /// </param>
+    public async Task RunAsync(MediaItem item, AppSettings settings, bool scanOnly, CancellationToken cancellationToken)
     {
+        var scan = scanOnly ? null : item.Scan;
+        if (scanOnly) item.Scan = null;
+
         item.Status = MediaStatus.Running;
         item.Progress = 0;
         item.Message = null;
         item.OutputPath = null;
-        item.FallbackNote = null;
+        if (scan is null) item.FallbackNote = null;
         item.StartedAt = DateTimeOffset.Now;
         item.FinishedAt = null;
 
@@ -41,7 +52,8 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
 
         try
         {
-            await ExecuteAsync(item, settings, cancellationToken);
+            if (scan is not null) await CensorAsync(item, settings, scan, null, cancellationToken);
+            else await ExecuteAsync(item, settings, scanOnly, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -61,17 +73,39 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         }
         finally
         {
-            // Finished, failed or stopped: without "Keep transcripts" nothing of this file is left behind.
-            if (!settings.KeepTranscripts) item.DeleteCache();
+            // Finished, failed or stopped: without "Keep transcripts" nothing of this file is left behind. A file
+            // waiting for the review keeps its transcripts until it is censored: the window that reviews it may be
+            // another process than the -start run that scanned it, and finds its words again from them.
+            if (!settings.KeepTranscripts && item.Status != MediaStatus.Scanned) item.DeleteCache();
 
             item.FinishedAt = DateTimeOffset.Now;
             Raise(item);
         }
     }
 
-    private async Task ExecuteAsync(MediaItem item, AppSettings settings, CancellationToken cancellationToken)
+    private async Task ExecuteAsync(MediaItem item, AppSettings settings, bool scanOnly, CancellationToken cancellationToken)
     {
-        var wholeFile = Stopwatch.StartNew();
+        var fileProgress = new FileProgress();
+        var scan = await FindWordsAsync(item, settings, fileProgress, planCensoring: !scanOnly, cancellationToken);
+        if (scan is null) return;
+
+        if (scanOnly)
+        {
+            HoldScan(item, scan);
+            return;
+        }
+
+        await CensorAsync(item, settings, scan, fileProgress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Everything up to the words found: probe, subtitles, transcripts, hits. Null when the file is skipped.
+    /// </summary>
+    /// <param name="planCensoring">The file is censored straight after, so its progress includes the encode.</param>
+    private async Task<ScanResult?> FindWordsAsync(
+        MediaItem item, AppSettings settings, FileProgress fileProgress, bool planCensoring, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
         SetStatus(item, "Checking the file");
 
         if (!File.Exists(item.InputPath))
@@ -85,15 +119,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         EnsureReadable(item.InputPath);
 
         // Checked before the transcript: an FFmpeg too old to mute would otherwise fail only after it.
-        var choice = await locator.FindSupportedFfmpegAsync(settings, cancellationToken);
-        var ffmpeg = choice.Path
-                     ?? throw new PipelineException("FFmpeg is not installed. Open Tools and press Set up to install it.");
-        if (choice.Problem is not null)
-            throw new PipelineException($"{choice.Problem} ({ffmpeg}). " + (string.IsNullOrWhiteSpace(settings.FfmpegPath)
-                ? "Open Tools and press Set up to install a current copy."
-                : "Choose a newer one in Settings, or clear the FFmpeg path there and press Set up on Tools."));
-        var ffprobe = locator.ResolveFfprobe(settings, ffmpeg)
-                      ?? throw new PipelineException("FFprobe is not installed. Open Tools and press Set up to install it.");
+        var (ffmpeg, ffprobe) = await ResolveToolsAsync(settings, cancellationToken);
 
         SetStatus(item, "Reading media information");
         var probeResult = await runner.RunAsync(new ProcessSpec(ffprobe, FfmpegCommands.Probe(item.InputPath)),
@@ -120,56 +146,20 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (plan.Skip)
         {
             Skip(item, plan.SkipReason ?? "already processed");
-            return;
+            return null;
         }
 
         if (plan.Error is not null) throw new PipelineException(plan.Error);
-
-        var outputPath = plan.OutputPath!;
-        var partialPath = plan.PartialPath!;
 
         CheckSpace(item, probe, settings);
 
         // The steps that report progress, weighed by the time they are expected to take on this file (its
         // drive, size, resolution, audio; see RunHistory). The transcription steps are planned once it is
-        // known which passes are cached; the vocals channels are dropped if unused.
+        // known which passes are cached.
         var features = StepFeatures.ForMedia(item.InputPath, probe, audio);
-        var fileProgress = new FileProgress();
-        var vocalsChannels = settings.MuteVocalsOnly ? VocalsChannels(audio) : [];
-
-        fileProgress.Plan(EncodeStep, ExpectedEncodeSeconds(features, reencodesAudio: true));
-        fileProgress.Plan(CheckStep, StepEstimates.CheckOutput);
-
-        var centreRead = vocalsChannels.Count > 0 && ChannelLayouts.HasFrontCenter(audio.Stream.ChannelLayout);
-
-        if (vocalsChannels.Count > 0)
-        {
-            var transcribeSeconds = ExpectedTranscribeSeconds(SpeechService.Plan(settings).Primary, settings, features);
-
-            // The centre is only read (to find its words in the other channels), not transcribed again.
-            if (centreRead) fileProgress.Plan(ChannelAudioStep("FC"), ExpectedExtractSeconds(features));
-
-            foreach (var channel in vocalsChannels)
-            {
-                fileProgress.Plan(ChannelAudioStep(channel), ExpectedExtractSeconds(features));
-                fileProgress.Plan(ChannelStep(channel), transcribeSeconds);
-            }
-        }
+        if (planCensoring) PlanCensoring(fileProgress, settings, audio, features);
 
         ShowExpected(item, fileProgress);
-
-        void DropVocalsChannels()
-        {
-            if (centreRead) fileProgress.Drop(ChannelAudioStep("FC"));
-
-            foreach (var channel in vocalsChannels)
-            {
-                fileProgress.Drop(ChannelAudioStep(channel));
-                fileProgress.Drop(ChannelStep(channel));
-            }
-
-            ShowProgress(item, fileProgress);
-        }
 
         using var work = WorkFolder.Create(settings.KeepWorkFiles);
 
@@ -246,11 +236,6 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         item.RunDetails.Add("Speech model: " + DescribeTranscript(settings, english, fileProgress.Has(PrimaryPassStep)));
         item.RunDetails.Add("Word matching: " + DescribeMatching(settings, hits, english, subtitleCues));
 
-        // A word with no length mutes nothing; say so rather than count it as muted.
-        var unmuted = hits.Hits.Where(hit => hit.End - hit.Start < 0.02).ToList();
-        foreach (var hit in unmuted)
-            Log.Warn(string.Create(CultureInfo.InvariantCulture, $"{item.Stem}: \"{hit.Label}\" at {hit.Start:0.000} s ({hit.Source}) has no length and is not muted."));
-
         foreach (var word in hits.Trimmed ?? [])
             Log.Info(string.Create(CultureInfo.InvariantCulture,
                 $"{item.Stem}: {word.Source} word \"{word.Text}\" at {word.Start:0.000} s ran {word.End - word.Start:0.000} s, to {word.End:0.000}; cut to end at {word.TrimmedEnd:0.000} ({word.Reason})."));
@@ -258,8 +243,141 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (settings.SkipMediaNoSwearing && hits.Ranges.Count == 0)
         {
             Skip(item, "no filtered words");
+            return null;
+        }
+
+        var occurrences = WordOccurrences.Group(hits.Hits);
+        WordOccurrences.Describe(occurrences, english, subtitleCues, hits.CaptionFit ?? hits.Fit);
+
+        return new ScanResult
+        {
+            Probe = probe,
+            Audio = audio,
+            SubtitleCues = subtitleCues,
+            OutputCues = outputCues,
+            English = english,
+            Hits = hits,
+            Occurrences = occurrences,
+            Transcribed = fileProgress.Has(PrimaryPassStep) || fileProgress.Has(SecondPassStep),
+            Elapsed = stopwatch.Elapsed,
+            SettingsKey = ScanResult.KeyFor(settings),
+            Ffmpeg = ffmpeg,
+            Ffprobe = ffprobe,
+        };
+    }
+
+    /// <summary>A scan for the review: the file waits, its words held on it, until Censor.</summary>
+    private static void HoldScan(MediaItem item, ScanResult scan)
+    {
+        var count = scan.Occurrences.Count;
+
+        scan.Reviewed = count == 0;
+        item.Scan = scan;
+        item.Progress = 100;
+        item.Status = MediaStatus.Scanned;
+        item.StatusText = item.StatusLabel;
+        item.Message = count == 0
+            ? "No filtered words were found, so there is nothing to review."
+            : $"{count} word{(count == 1 ? string.Empty : "s")} to review: click the word count, untick any to leave in, then press Censor.";
+    }
+
+    /// <summary>
+    /// Mutes the words <paramref name="scan"/> found, less those the review left in, writes the subtitles and
+    /// encodes, validates the output and moves it into place.
+    /// </summary>
+    /// <param name="foundProgress">This run's progress when it also found the words; null for a held scan, which plans its own.</param>
+    private async Task CensorAsync(
+        MediaItem item, AppSettings settings, ScanResult scan, FileProgress? foundProgress, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var probe = scan.Probe;
+        var audio = scan.Audio;
+        var english = scan.English;
+        var subtitleCues = scan.SubtitleCues;
+        var outputCues = scan.OutputCues;
+        var audioFile = FileTypes.IsAudioFile(item.InputPath);
+        var features = StepFeatures.ForMedia(item.InputPath, probe, audio);
+        var ffmpeg = scan.Ffmpeg;
+        var ffprobe = scan.Ffprobe;
+        var fileProgress = foundProgress ?? new FileProgress();
+
+        if (foundProgress is null)
+        {
+            // The words were found in an earlier run: the file and the tools are checked again, as time has passed.
+            SetStatus(item, "Checking the file");
+
+            if (!File.Exists(item.InputPath))
+                throw new PipelineException("The input file no longer exists.");
+
+            EnsureReadable(item.InputPath);
+            CheckSpace(item, probe, settings);
+            (ffmpeg, ffprobe) = await ResolveToolsAsync(settings, cancellationToken);
+
+            PlanCensoring(fileProgress, settings, audio, features);
+            ShowExpected(item, fileProgress);
+        }
+
+        var otherAudio = !audioFile && settings.KeepOtherAudioTracks
+            ? probe.AudioStreams.Where(stream => stream.Index != audio.Stream.Index).ToList()
+            : [];
+
+        var plan = OutputPathPolicy.Decide(item.InputPath, settings, audio.Stream, otherAudio);
+        if (plan.Skip)
+        {
+            Skip(item, plan.SkipReason ?? "already processed");
+            item.Scan = null;
             return;
         }
+
+        if (plan.Error is not null) throw new PipelineException(plan.Error);
+
+        var outputPath = plan.OutputPath!;
+        var partialPath = plan.PartialPath!;
+
+        var vocalsChannels = settings.MuteVocalsOnly ? VocalsChannels(audio) : [];
+        var centreRead = vocalsChannels.Count > 0 && ChannelLayouts.HasFrontCenter(audio.Stream.ChannelLayout);
+
+        void DropVocalsChannels()
+        {
+            if (centreRead) fileProgress.Drop(ChannelAudioStep("FC"));
+
+            foreach (var channel in vocalsChannels)
+            {
+                fileProgress.Drop(ChannelAudioStep(channel));
+                fileProgress.Drop(ChannelStep(channel));
+            }
+
+            ShowProgress(item, fileProgress);
+        }
+
+        // The words the review unticked are left in: their hits go, and the mute ranges are rebuilt without them.
+        var hits = WordOccurrences.LeaveIn(scan.Hits, scan.Occurrences, probe.DurationSeconds, audio.OffsetSeconds);
+        var leftIn = scan.Occurrences.Where(occurrence => !occurrence.Mute).ToList();
+        item.Hits = hits;
+
+        // A held scan censored again after a failed attempt says these once.
+        item.RunDetails.RemoveAll(line => line.StartsWith("Left in: ", StringComparison.Ordinal) || line.StartsWith("Audio: ", StringComparison.Ordinal));
+
+        if (leftIn.Count > 0)
+        {
+            var listed = string.Join(", ", leftIn.Take(5).Select(occurrence => $"{FormatTime(occurrence.Start)} {occurrence.Label}"));
+            item.RunDetails.Add($"Left in: {leftIn.Count} word{(leftIn.Count == 1 ? string.Empty : "s")} you unticked in the review ({listed}{(leftIn.Count > 5 ? ", …" : string.Empty)})");
+            Log.Info($"{item.Stem}: {leftIn.Count} word(s) left in by the review: {string.Join(", ", leftIn.Select(occurrence => $"{FormatTime(occurrence.Start)} {occurrence.Label}"))}.");
+        }
+
+        // A word with no length mutes nothing; say so rather than count it as muted.
+        var unmuted = hits.Hits.Where(hit => hit.End - hit.Start < 0.02).ToList();
+        foreach (var hit in unmuted)
+            Log.Warn(string.Create(CultureInfo.InvariantCulture, $"{item.Stem}: \"{hit.Label}\" at {hit.Start:0.000} s ({hit.Source}) has no length and is not muted."));
+
+        if (settings.SkipMediaNoSwearing && hits.Ranges.Count == 0)
+        {
+            Skip(item, leftIn.Count > 0 ? "every word was left in" : "no filtered words");
+            item.Scan = null;
+            return;
+        }
+
+        using var work = WorkFolder.Create(settings.KeepWorkFiles);
 
         item.Language = ResolveLanguage(audio.Stream, outputCues);
 
@@ -274,7 +392,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
             // An audio file carries no subtitle tracks; its transcript stays in the cache.
             var subtitleInputs = audioFile
                 ? []
-                : WriteSubtitleFiles(item, settings, hits, outputCues, ReferenceEquals(outputCues, subtitleCues), work, createdSubtitles);
+                : WriteSubtitleFiles(item, settings, hits, scan.Occurrences, outputCues, ReferenceEquals(outputCues, subtitleCues), work, createdSubtitles);
 
             List<MediaStreamInfo> keptSubtitles = [];
 
@@ -305,7 +423,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 if (vocals)
                 {
                     var perChannel = await BuildVocalsRangesAsync(
-                        item, settings, probe, audio, hits, subtitleCues, english!, ffmpeg, work, fileProgress, features, cancellationToken);
+                        item, settings, probe, audio, hits, scan.Occurrences, subtitleCues, english!, ffmpeg, work, fileProgress, features, cancellationToken);
 
                     if (perChannel.Count == 0)
                     {
@@ -439,8 +557,11 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         item.StatusText = "Done";
 
         var summary = hits.Ranges.Count == 0
-            ? "No filtered words were heard; copied without mutes."
+            ? leftIn.Count > 0 ? "Every word was left in; copied without mutes." : "No filtered words were heard; copied without mutes."
             : $"{hits.Hits.Count} filtered word{(hits.Hits.Count == 1 ? string.Empty : "s")} in {hits.Ranges.Count} range{(hits.Ranges.Count == 1 ? string.Empty : "s")}.";
+
+        if (leftIn.Count > 0 && hits.Ranges.Count > 0)
+            summary += $" {leftIn.Count} left in by you.";
 
         if (unmuted.Count > 0)
             summary += $" {unmuted.Count} of them had no length to mute (the log lists them).";
@@ -450,12 +571,52 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         foreach (var note in notes) summary += " " + note;
 
         item.Message = summary;
+        item.Scan = null;
 
-        var transcribed = fileProgress.Has(PrimaryPassStep) || fileProgress.Has(SecondPassStep);
-        RunHistory.Default.Record(StepKind.File, features with { Transcribed = transcribed }, wholeFile.Elapsed);
+        // The file's own time: finding the words and censoring them, not the wait for the review between.
+        RunHistory.Default.Record(StepKind.File, features with { Transcribed = scan.Transcribed }, scan.Elapsed + stopwatch.Elapsed);
 
         if (settings.DeleteOriginalFiles) DeleteOriginals(item, settings.DeleteOriginalsPermanently);
     }
+
+    /// <summary>The FFmpeg and FFprobe to run, or why there are none that will do.</summary>
+    private async Task<(string Ffmpeg, string Ffprobe)> ResolveToolsAsync(AppSettings settings, CancellationToken cancellationToken)
+    {
+        var choice = await locator.FindSupportedFfmpegAsync(settings, cancellationToken);
+        var ffmpeg = choice.Path
+                     ?? throw new PipelineException("FFmpeg is not installed. Open Tools and press Set up to install it.");
+        if (choice.Problem is not null)
+            throw new PipelineException($"{choice.Problem} ({ffmpeg}). " + (string.IsNullOrWhiteSpace(settings.FfmpegPath)
+                ? "Open Tools and press Set up to install a current copy."
+                : "Choose a newer one in Settings, or clear the FFmpeg path there and press Set up on Tools."));
+        var ffprobe = locator.ResolveFfprobe(settings, ffmpeg)
+                      ?? throw new PipelineException("FFprobe is not installed. Open Tools and press Set up to install it.");
+
+        return (ffmpeg, ffprobe);
+    }
+
+    /// <summary>The censoring steps' share of the file's progress: the encode, the check and the vocals channels (dropped if unused).</summary>
+    private void PlanCensoring(FileProgress fileProgress, AppSettings settings, AudioSelection audio, StepFeatures features)
+    {
+        fileProgress.Plan(EncodeStep, ExpectedEncodeSeconds(features, reencodesAudio: true));
+        fileProgress.Plan(CheckStep, StepEstimates.CheckOutput);
+
+        var vocalsChannels = settings.MuteVocalsOnly ? VocalsChannels(audio) : [];
+        if (vocalsChannels.Count == 0) return;
+
+        var transcribeSeconds = ExpectedTranscribeSeconds(SpeechService.Plan(settings).Primary, settings, features);
+
+        // The centre is only read (to find its words in the other channels), not transcribed again.
+        if (ChannelLayouts.HasFrontCenter(audio.Stream.ChannelLayout)) fileProgress.Plan(ChannelAudioStep("FC"), ExpectedExtractSeconds(features));
+
+        foreach (var channel in vocalsChannels)
+        {
+            fileProgress.Plan(ChannelAudioStep(channel), ExpectedExtractSeconds(features));
+            fileProgress.Plan(ChannelStep(channel), transcribeSeconds);
+        }
+    }
+
+    private static string FormatTime(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"h\:mm\:ss");
 
     private async Task<(PhononResult? English, PhononResult? Multilingual)> TranscribeAsync(
         MediaItem item, AppSettings settings, MediaProbe probe, AudioSelection audio, string ffmpeg, WorkFolder work,
@@ -626,6 +787,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         MediaItem item,
         AppSettings settings,
         HitSet hits,
+        IReadOnlyList<WordOccurrence> occurrences,
         List<Cue>? sourceCues,
         bool sourceIsSubtitleFile,
         WorkFolder work,
@@ -636,6 +798,10 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         if (!settings.CreatesSubtitles || sourceCues is not { Count: > 0 }) return inputs;
 
         var cues = sourceCues.Select(c => c.Clone()).ToList();
+
+        // A word the review left in is left readable in its line, found before the lines are retimed below.
+        // A subtitle file is placed on the speech by the fit, as for the review; generated cues are already on it.
+        var spared = WordOccurrences.SparedInCues(occurrences, cues, sourceIsSubtitleFile ? hits.CaptionFit ?? hits.Fit : SyncFit.Identity);
 
         // The sync fit maps a subtitle file onto the transcript; generated cues are already on it.
         if (sourceIsSubtitleFile && settings.RetimeOutputSubtitles && hits.Fit.Accepted)
@@ -657,7 +823,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 .Where(path => !File.Exists(path))
                 .ToList();
 
-        var result = CensoredSubtitleWriter.Write(cues, basePath, settings, settings.SubtitleOutput);
+        var result = CensoredSubtitleWriter.Write(cues, basePath, settings, settings.SubtitleOutput, spared);
 
         if (!settings.EmbedSubtitles)
         {
@@ -746,6 +912,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         MediaProbe probe,
         AudioSelection audio,
         HitSet hits,
+        IReadOnlyList<WordOccurrence> occurrences,
         List<Cue>? subtitleCues,
         PhononResult english,
         string ffmpeg,
@@ -755,6 +922,7 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
         CancellationToken cancellationToken)
     {
         var perChannel = new Dictionary<string, IReadOnlyList<TimeRange>>(StringComparer.Ordinal);
+        var leftIn = occurrences.Where(occurrence => !occurrence.Mute).ToList();
         var layout = audio.Stream.ChannelLayout ?? string.Empty;
         var channels = ChannelLayouts.ChannelsFor(layout);
         if (channels is null) return perChannel;
@@ -828,6 +996,9 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
                 }
 
                 channelHits.AddRange(wholeCueHits);
+
+                // This channel's own transcript hears the words the review left in as well; they stay in here too.
+                if (leftIn.Count > 0) channelHits.RemoveAll(hit => WordOccurrences.IsLeftIn(hit, leftIn));
 
                 Log.Info($"{item.Stem}: channel {channel} carries the centre's speech at {carried} of {hits.Hits.Count} words.");
 
@@ -1281,14 +1452,16 @@ public sealed class CensorPipeline(IProcessRunner runner, ToolLocator locator, S
     }
 }
 
-public sealed record QueueSummary(int Succeeded, int Skipped, int Failed, int Cancelled, TimeSpan Elapsed)
+/// <param name="Scanned">Files a scan-only run left waiting for the review.</param>
+public sealed record QueueSummary(int Succeeded, int Skipped, int Failed, int Cancelled, TimeSpan Elapsed, int Scanned = 0)
 {
-    public int Total => Succeeded + Skipped + Failed + Cancelled;
+    public int Total => Succeeded + Skipped + Failed + Cancelled + Scanned;
     public bool Fits => Failed == 0 && Cancelled == 0;
 
     public string Describe()
     {
         var parts = new List<string>();
+        if (Scanned > 0) parts.Add($"{Scanned} ready for review");
         if (Succeeded > 0) parts.Add($"{Succeeded} done");
         if (Skipped > 0) parts.Add($"{Skipped} skipped");
         if (Failed > 0) parts.Add($"{Failed} failed");
@@ -1308,14 +1481,15 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
     private MediaItem? _current;
     private CancellationTokenSource? _currentCancellation;
 
-    public Task<QueueSummary> RunAsync(IReadOnlyList<MediaItem> items, AppSettings settings, CancellationToken cancellationToken)
+    public Task<QueueSummary> RunAsync(IReadOnlyList<MediaItem> items, AppSettings settings, CancellationToken cancellationToken, bool scanOnly = false)
     {
         var queue = new Queue<MediaItem>(items);
-        return RunAsync(() => queue.TryDequeue(out var item) ? item : null, settings, cancellationToken);
+        return RunAsync(() => queue.TryDequeue(out var item) ? item : null, settings, cancellationToken, scanOnly);
     }
 
     /// <param name="next">The next file to run, or null when there is none. Asked after every file, so files added mid-run are picked up.</param>
-    public async Task<QueueSummary> RunAsync(Func<MediaItem?> next, AppSettings settings, CancellationToken cancellationToken)
+    /// <param name="scanOnly">Only find each file's words, for the review before censoring (see <see cref="CensorPipeline.RunAsync(MediaItem, AppSettings, bool, CancellationToken)"/>).</param>
+    public async Task<QueueSummary> RunAsync(Func<MediaItem?> next, AppSettings settings, CancellationToken cancellationToken, bool scanOnly = false)
     {
         var stopwatch = Stopwatch.StartNew();
         var ran = new List<MediaItem>();
@@ -1348,7 +1522,7 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
 
                 try
                 {
-                    await pipeline.RunAsync(item, settings, itemCancellation.Token);
+                    await pipeline.RunAsync(item, settings, scanOnly, itemCancellation.Token);
                 }
                 finally
                 {
@@ -1376,7 +1550,8 @@ public sealed class QueueRunner(CensorPipeline pipeline, SpeechService speech)
             counted.Count(i => i.Status == MediaStatus.Skipped),
             counted.Count(i => i.Status == MediaStatus.Failed),
             counted.Count(i => i.Status == MediaStatus.Cancelled),
-            stopwatch.Elapsed);
+            stopwatch.Elapsed,
+            counted.Count(i => i.Status == MediaStatus.Scanned));
     }
 
     /// <summary>Takes a file off the running queue: cancels it if it is the one running, and never starts it otherwise.</summary>

@@ -62,11 +62,16 @@ public static class CensoredSubtitleWriter
     public static string CensoredPath(string basePathWithoutExtension, AppSettings settings) =>
         basePathWithoutExtension + "_Censored" + AppSettings.SanitiseAffix(settings.CustomAffix) + ".srt";
 
+    /// <param name="spared">
+    /// Per cue, the matches left unmasked (words the review before censoring left in at that line); null, or a
+    /// null entry, masks everything.
+    /// </param>
     public static CensoredSubtitleResult Write(
         IReadOnlyList<Cue> cues,
         string basePathWithoutExtension,
         AppSettings settings,
-        SubtitleOutputType outputType)
+        SubtitleOutputType outputType,
+        IReadOnlyList<Func<string, bool>?>? spared = null)
     {
         if (outputType == SubtitleOutputType.None)
             return new CensoredSubtitleResult(null, null, cues.Count, 0, 0);
@@ -78,9 +83,11 @@ public static class CensoredSubtitleWriter
         var maskedWords = 0;
         var censoredCues = 0;
 
-        foreach (var cue in cues)
+        for (var index = 0; index < cues.Count; index++)
         {
-            var masked = Mask(cue.Text, entries, settings.MaskCharacter(), out var count);
+            var cue = cues[index];
+            var spare = spared is not null && index < spared.Count ? spared[index] : null;
+            var masked = Mask(cue.Text, entries, settings.MaskCharacter(), out var count, spare);
             maskedWords += count;
 
             var fullCue = cue.Clone();
@@ -132,12 +139,14 @@ public static class CensoredSubtitleWriter
     }
 
     /// <summary>Mask every occurrence; overlapping entries are handled by a character mask, not by re-scanning.</summary>
-    public static string Mask(string text, IReadOnlyList<string> entries, char censorCharacter, out int matchCount)
+    /// <param name="spare">Matches (by entry) to leave as they are, such as a word the review left in; not counted.</param>
+    public static string Mask(string text, IReadOnlyList<string> entries, char censorCharacter, out int matchCount, Func<string, bool>? spare = null)
     {
         matchCount = 0;
         if (string.IsNullOrEmpty(text) || entries.Count == 0) return text;
 
         var matches = SwearMatcher.Find(text, entries);
+        if (spare is not null) matches = matches.Where(match => !spare(match.Entry)).ToList();
         matchCount = matches.Count;
         if (matches.Count == 0) return text;
 

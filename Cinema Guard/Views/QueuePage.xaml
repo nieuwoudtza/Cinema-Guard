@@ -34,15 +34,16 @@
                     </StackPanel>
                 </Button>
 
+                <!-- With Review words before censoring, Scan first, then Censor once the words are reviewed. -->
                 <Button
                     Style="{StaticResource AccentButtonStyle}"
                     Click="Start_Click"
-                    AutomationProperties.Name="Censor"
-                    ToolTipService.ToolTip="Censor every file in the queue, one after another. Each gets a muted copy beside it."
+                    AutomationProperties.Name="{x:Bind ViewModel.StartText, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind ViewModel.StartToolTip, Mode=OneWay}"
                     Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE768;" FontSize="14" />
-                        <TextBlock Text="Censor" />
+                        <TextBlock Text="{x:Bind ViewModel.StartText, Mode=OneWay}" />
                     </StackPanel>
                 </Button>
 
@@ -207,7 +208,7 @@
                     <!-- Works on the row right-clicked (or the selection, when that row is in it).
                          Items tagged "idle" change the queue, so they are hidden while media is being processed. -->
                     <MenuFlyout Opening="ContextMenu_Opening">
-                        <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" ToolTipService.ToolTip="The filtered words found, and what the last run worked from" />
+                        <MenuFlyoutItem Text="Peek" Click="PeekMenu_Click" ToolTipService.ToolTip="The filtered words found, and what the last run worked from. A scanned file opens its review." />
                         <MenuFlyoutItem Text="Language report" Click="LanguageReport_Click" ToolTipService.ToolTip="Dialogue the multilingual pass heard in other languages" />
                         <MenuFlyoutItem Text="Listen to channels…" Click="Listen_Click" ToolTipService.ToolTip="Play each audio channel on its own, to hear which ones carry the dialogue" />
                         <MenuFlyoutSeparator Tag="idle" />
@@ -320,7 +321,7 @@
                                         Click="Peek_Click"
                                         AutomationProperties.Name="{x:Bind HitText, Mode=OneWay}"
                                         Visibility="{x:Bind HitsVisibility, Mode=OneWay}"
-                                        ToolTipService.ToolTip="Show the filtered words, and which subtitles, speech model and audio channels were used">
+                                        ToolTipService.ToolTip="{x:Bind HitToolTip, Mode=OneWay}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE721;" FontSize="14" />
                                             <TextBlock Text="{x:Bind HitText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />

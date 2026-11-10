@@ -147,6 +147,12 @@
                             </controls:SettingRow>
 
                             <controls:SettingRow
+                                Header="Review words before censoring"
+                                Description="The Queue's button becomes Scan: it finds the words in every file without changing anything. Click a file's word count to see each word with its subtitle line, play it, and untick any the speech model misheard. Then press Censor to mute the rest. The review lasts until the files are censored or Cinema Guard is closed. A command-line run (-start, such as MediaPilot's) only scans too: its files then wait here for the review.">
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.S.ReviewBeforeCensoring, Mode=TwoWay}" OnContent="On" OffContent="Off" />
+                            </controls:SettingRow>
+
+                            <controls:SettingRow
                                 Header="Exact word only"
                                 Description="Mute only the word itself: sets the extra mute for single words, and the fade, to 0. The whole-sentence padding below is left alone. Recommended puts the usual values back. Press Save settings to keep either.">
                                 <StackPanel Orientation="Horizontal" Spacing="8">

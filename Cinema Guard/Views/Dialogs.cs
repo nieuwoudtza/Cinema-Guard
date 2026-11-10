@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using CinemaGuard.Core.Intervals;
 using Cinema_Guard.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -719,6 +720,223 @@ public static class Dialogs
             player.Dispose();
             cancel.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The review before censoring: every moment a filtered word was found, with the subtitle line and what the
+    /// speech model heard there, and a button to hear it. An unticked moment is left in. True when saved; on
+    /// Cancel nothing changes. <paramref name="prepare"/> makes a clip of the whole track (start, seconds).
+    /// </summary>
+    public static async Task<bool> ReviewWordsAsync(
+        XamlRoot root,
+        string fileName,
+        IReadOnlyList<WordOccurrence> occurrences,
+        Func<double, double, System.Threading.CancellationToken, Task<string?>> prepare)
+    {
+        var muted = (Style)Application.Current.Resources["MutedStyle"];
+        var secondary = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        var body = new StackPanel { Spacing = 10, MinWidth = 620 };
+        var player = new Windows.Media.Playback.MediaPlayer();
+        var cancel = new System.Threading.CancellationTokenSource();
+        Button? playing = null;
+
+        body.Children.Add(new TextBlock
+        {
+            Text = "Untick a word to leave it in: the film keeps its sound there. Everything ticked is muted when you press Censor. " +
+                   "Play a word to hear a few seconds around it.",
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        // Show one word at a time, and tick or untick all of it at once.
+        var filter = new ComboBox { MinWidth = 180 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(filter, "Show");
+        filter.Items.Add("All words");
+        foreach (var label in occurrences.Select(occurrence => occurrence.Label).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            filter.Items.Add(label);
+        filter.SelectedIndex = 0;
+
+        var tickShown = new Button { Content = "Tick all shown" };
+        var untickShown = new Button { Content = "Untick all shown" };
+        var count = new TextBlock { Style = muted, VerticalAlignment = VerticalAlignment.Center };
+
+        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        foreach (var element in new UIElement[] { filter, tickShown, untickShown, count }) toolbar.Children.Add(element);
+        body.Children.Add(toolbar);
+
+        var list = new StackPanel();
+        var rows = new List<(WordOccurrence Occurrence, CheckBox Box, Grid Row)>();
+        var status = new TextBlock { Style = muted, TextWrapping = TextWrapping.Wrap };
+
+        void ShowCount()
+        {
+            var ticked = rows.Count(row => row.Box.IsChecked == true);
+            count.Text = $"{ticked} of {rows.Count} will be muted";
+        }
+
+        void Stopped()
+        {
+            if (playing is not null) playing.Content = "Play";
+            playing = null;
+        }
+
+        player.MediaEnded += (_, _) => body.DispatcherQueue.TryEnqueue(() =>
+        {
+            Stopped();
+            status.Text = string.Empty;
+        });
+
+        foreach (var occurrence in occurrences)
+        {
+            var time = TimeSpan.FromSeconds(Math.Max(0, occurrence.Start)).ToString(@"h\:mm\:ss");
+
+            var box = new CheckBox { IsChecked = occurrence.Mute, MinWidth = 0, VerticalAlignment = VerticalAlignment.Top };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, $"Mute {occurrence.Label} at {time}");
+            ToolTipService.SetToolTip(box, "Ticked: muted. Unticked: left in.");
+            box.Checked += (_, _) => ShowCount();
+            box.Unchecked += (_, _) => ShowCount();
+
+            var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            heading.Children.Add(new TextBlock { Text = occurrence.Label, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            heading.Children.Add(new TextBlock
+            {
+                Text = string.Join(", ", occurrence.Sources.Select(Describe)) + (occurrence.WholeCue ? " · the whole line" : string.Empty),
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = secondary,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            var texts = new StackPanel { Spacing = 2, Margin = new Thickness(0, 6, 0, 0) };
+            texts.Children.Add(heading);
+            if (occurrence.SubtitleText is { } subtitle) texts.Children.Add(Context("Subtitles", subtitle));
+            if (occurrence.HeardText is { } heard) texts.Children.Add(Context("Heard", heard));
+
+            var play = new Button { Content = "Play", MinWidth = 64, VerticalAlignment = VerticalAlignment.Top };
+            ToolTipService.SetToolTip(play, "Hear a few seconds around the word, as the film sounds now");
+
+            play.Click += async (_, _) =>
+            {
+                var again = playing == play;
+                player.Pause();
+                Stopped();
+                if (again) { status.Text = string.Empty; return; }
+
+                // From two seconds before to two after, at most 15 seconds for a whole line.
+                var from = Math.Max(0, occurrence.Start - 2);
+                var seconds = Math.Min(15, occurrence.End - from + 2);
+
+                play.IsEnabled = false;
+                status.Text = $"Preparing {time}…";
+
+                try
+                {
+                    var path = await prepare(from, seconds, cancel.Token);
+                    if (path is null)
+                    {
+                        status.Text = "Could not read the audio. The log has FFmpeg's message.";
+                        return;
+                    }
+
+                    player.Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(path));
+                    player.Play();
+                    playing = play;
+                    play.Content = "Stop";
+                    status.Text = $"Playing {time}.";
+                }
+                catch (OperationCanceledException)
+                {
+                    // The dialog was closed while the clip was made.
+                }
+                finally
+                {
+                    play.IsEnabled = true;
+                }
+            };
+
+            var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 4, 0, 8) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var timeText = new TextBlock { Text = time, Margin = new Thickness(0, 6, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+            Grid.SetColumn(timeText, 1);
+            Grid.SetColumn(texts, 2);
+            Grid.SetColumn(play, 3);
+
+            row.Children.Add(box);
+            row.Children.Add(timeText);
+            row.Children.Add(texts);
+            row.Children.Add(play);
+
+            list.Children.Add(row);
+            rows.Add((occurrence, box, row));
+        }
+
+        filter.SelectionChanged += (_, _) =>
+        {
+            var shown = filter.SelectedIndex <= 0 ? null : filter.SelectedItem as string;
+            foreach (var (occurrence, _, row) in rows)
+                row.Visibility = shown is null || occurrence.Label == shown ? Visibility.Visible : Visibility.Collapsed;
+        };
+
+        tickShown.Click += (_, _) => SetShown(true);
+        untickShown.Click += (_, _) => SetShown(false);
+
+        void SetShown(bool mute)
+        {
+            foreach (var (_, box, row) in rows)
+                if (row.Visibility == Visibility.Visible) box.IsChecked = mute;
+        }
+
+        ShowCount();
+        body.Children.Add(new ScrollViewer { Content = list, MaxHeight = 420, Padding = new Thickness(0, 0, 16, 0) });
+        body.Children.Add(status);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = $"Review words — {fileName}",
+            Content = body,
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        // The default 548 would squeeze the context lines.
+        dialog.Resources["ContentDialogMaxWidth"] = 820.0;
+
+        try
+        {
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
+
+            foreach (var (occurrence, box, _) in rows) occurrence.Mute = box.IsChecked == true;
+            return true;
+        }
+        finally
+        {
+            cancel.Cancel();
+            player.Pause();
+            player.Source = null;
+            player.Dispose();
+            cancel.Dispose();
+        }
+
+        TextBlock Context(string label, string text)
+        {
+            var block = new TextBlock { TextWrapping = TextWrapping.Wrap, Style = muted };
+            block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = label + ": ", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = $"“{text}”" });
+            return block;
+        }
+
+        static string Describe(HitSource source) => source switch
+        {
+            HitSource.English => "English model",
+            HitSource.Multilingual => "multilingual model",
+            HitSource.Subtitle => "subtitles",
+            HitSource.LegacyOneWord => "one-word subtitles",
+            _ => "masked in the source",
+        };
     }
 
     /// <summary>"1:02:03", "12:30" (minutes and seconds) or "90" (seconds).</summary>

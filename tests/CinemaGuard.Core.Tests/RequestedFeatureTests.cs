@@ -177,7 +177,7 @@ public class RequestedFeatureTests
     [Fact]
     public void TheHelpTextNamesEveryOption()
     {
-        foreach (var option in new[] { "-start", LaunchArguments.ReportOption, LaunchArguments.ProgressOption, LaunchArguments.CancelEventOption, "--help" })
+        foreach (var option in new[] { "-start", LaunchArguments.ReportOption, LaunchArguments.ProgressOption, LaunchArguments.CancelEventOption, LaunchArguments.ReviewOption, "--help" })
             Assert.Contains(option, LaunchArguments.HelpText);
 
         foreach (var code in new[] { HeadlessExitCodes.Success, HeadlessExitCodes.Failed, HeadlessExitCodes.NoFiles, HeadlessExitCodes.Crashed })

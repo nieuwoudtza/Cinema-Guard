@@ -14,6 +14,9 @@ namespace Cinema_Guard.Services;
 /// </summary>
 public sealed class InstanceCoordinator : IDisposable
 {
+    /// <summary>The window's mutex and pipe name; one window per Windows session.</summary>
+    public const string WindowKey = "CinemaGuard2.Instance";
+
     private readonly Mutex _mutex;
     private readonly string _pipeName;
     private readonly CancellationTokenSource _cancellation = new();
@@ -71,7 +74,21 @@ public sealed class InstanceCoordinator : IDisposable
         }
     }
 
-    public void SendToRunningInstance(IEnumerable<string> paths)
+    public void SendToRunningInstance(IEnumerable<string> paths) => TrySend(_pipeName, paths);
+
+    /// <summary>
+    /// Hands <paramref name="lines"/> (paths, and options such as --review) to the open window, from a process
+    /// that is not one itself (a -start run). False when no window is open or it did not answer.
+    /// </summary>
+    public static bool SendToWindow(string key, IEnumerable<string> lines)
+    {
+        if (!Mutex.TryOpenExisting(@"Local\" + key, out var mutex)) return false;
+
+        mutex.Dispose();
+        return TrySend(key + ".pipe", lines);
+    }
+
+    private static bool TrySend(string pipeName, IEnumerable<string> lines)
     {
         try
         {
@@ -79,15 +96,17 @@ public sealed class InstanceCoordinator : IDisposable
             // else Windows only flashes the running copy's taskbar button.
             AllowSetForegroundWindow(AnyProcess);
 
-            using var client = new System.IO.Pipes.NamedPipeClientStream(".", _pipeName, System.IO.Pipes.PipeDirection.Out);
+            using var client = new System.IO.Pipes.NamedPipeClientStream(".", pipeName, System.IO.Pipes.PipeDirection.Out);
             client.Connect(3000);
 
             using var writer = new StreamWriter(client);
-            writer.Write(string.Join('\n', paths));
+            writer.Write(string.Join('\n', lines));
+            return true;
         }
         catch (Exception ex)
         {
             Log.Warn($"Could not hand the paths to the running instance: {ex.Message}");
+            return false;
         }
     }
 

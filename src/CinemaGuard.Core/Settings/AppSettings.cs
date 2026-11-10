@@ -131,6 +131,13 @@ public sealed class AppSettings
     public bool KeepOtherAudioTracks { get; set; }
 
     public bool SkipMediaNoSwearing { get; set; } = true;
+
+    /// <summary>
+    /// Censor first only finds each file's words; they are reviewed (and any left in) before the second Censor
+    /// mutes them. A headless run (-start) then only scans, and hands its files to the window for the review.
+    /// </summary>
+    public bool ReviewBeforeCensoring { get; set; }
+
     public bool DeleteOriginalFiles { get; set; }
 
     /// <summary>With <see cref="DeleteOriginalFiles"/> on: delete the originals for good instead of sending them to the Recycle Bin.</summary>

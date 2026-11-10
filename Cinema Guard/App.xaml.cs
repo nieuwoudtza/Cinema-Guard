@@ -69,20 +69,23 @@ public partial class App : Application
             return;
         }
 
-        _instances = new InstanceCoordinator("CinemaGuard2.Instance");
+        _instances = new InstanceCoordinator(InstanceCoordinator.WindowKey);
 
         if (!_instances.IsFirstInstance)
         {
-            _instances.SendToRunningInstance(commandLine.Paths);
+            _instances.SendToRunningInstance(commandLine.Review ? commandLine.Paths.Append(LaunchArguments.ReviewOption) : commandLine.Paths);
             Exit();
             return;
         }
 
-        _instances.LaunchReceived += paths =>
+        _instances.LaunchReceived += lines =>
             Shell?.DispatcherQueue.TryEnqueue(() =>
             {
                 Shell.BringToFront();
-                if (paths.Count > 0) MainViewModel?.AddPaths(paths, recursive: false);
+
+                var arguments = LaunchArguments.Parse(lines);
+                if (arguments.Paths.Count > 0) MainViewModel?.AddPaths(arguments.Paths, recursive: false);
+                if (arguments.Review && MainViewModel is not null) _ = MainViewModel.ScanForReviewAsync();
             });
 
         MainViewModel = Services.GetRequiredService<MainViewModel>();
@@ -91,6 +94,36 @@ public partial class App : Application
         Shell.Activate();
 
         if (commandLine.Paths.Count > 0) MainViewModel.AddPaths(commandLine.Paths, recursive: false);
+        if (commandLine.Review) _ = MainViewModel.ScanForReviewAsync();
+    }
+
+    /// <summary>
+    /// A -start run with Review words before censoring on scanned these files: they go to the window, opened
+    /// if it is not, which finds their words again from the saved transcripts and waits for the review.
+    /// </summary>
+    private static void HandOverForReview(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return;
+
+        if (InstanceCoordinator.SendToWindow(InstanceCoordinator.WindowKey, paths.Append(LaunchArguments.ReviewOption)))
+        {
+            Log.Info($"Headless run: handed {paths.Count} file(s) to the open window for the review.");
+            return;
+        }
+
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
+            foreach (var path in paths) start.ArgumentList.Add(path);
+            start.ArgumentList.Add(LaunchArguments.ReviewOption);
+
+            System.Diagnostics.Process.Start(start);
+            Log.Info($"Headless run: opened the window with {paths.Count} file(s) for the review.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not open the window for the review", ex);
+        }
     }
 
     /// <summary>
@@ -145,12 +178,16 @@ public partial class App : Application
 
                 if (items.Count > 0)
                 {
+                    // With the review on, nothing is censored unseen: the files are scanned, then reviewed in the window.
+                    var review = settings.ReviewBeforeCensoring;
                     var runner = Services.GetRequiredService<QueueRunner>();
-                    var summary = await runner.RunAsync(items, settings, cancellation.Token);
+                    var summary = await runner.RunAsync(items, settings, cancellation.Token, scanOnly: review);
 
                     exitCode = HeadlessExitCodes.For(summary);
                     HeadlessReport.Write(items, summary.Elapsed, summary.Describe(), exitCode, arguments.ReportPath);
                     Log.Info($"Headless run: {summary.Describe()} (exit code {exitCode})");
+
+                    if (review) HandOverForReview(items.Where(item => item.Status == MediaStatus.Scanned).Select(item => item.InputPath).ToList());
                 }
                 else
                 {

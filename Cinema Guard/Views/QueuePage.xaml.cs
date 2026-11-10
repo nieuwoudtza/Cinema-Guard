@@ -36,6 +36,7 @@ public sealed partial class QueuePage : Page
         {
             ViewModel.Items.CollectionChanged += Items_CollectionChanged;
             ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            ViewModel.RefreshQueueState();
             UpdateSelectionBar();
         };
 
@@ -224,6 +225,17 @@ public sealed partial class QueuePage : Page
             App.Shell?.NavigateTo("models");
             return;
         }
+
+        // Censoring words nobody looked at is allowed (some files need no check), but not by accident.
+        var unreviewed = ViewModel.UnreviewedCount();
+        if (unreviewed > 0 && !await Dialogs.ConfirmAsync(
+                XamlRoot,
+                "Censor without reviewing?",
+                $"{(unreviewed == 1 ? "One file has" : $"{unreviewed} files have")} not been reviewed: every word found in {(unreviewed == 1 ? "it" : "them")} will be muted. " +
+                "Click a file's word count to review it first.",
+                "Censor anyway",
+                "Go back"))
+            return;
 
         var completed = await ViewModel.StartAsync();
         if (completed) await RunFinishedActionAsync();
@@ -421,8 +433,27 @@ public sealed partial class QueuePage : Page
         if (target is not null) await ShowPeekAsync(target);
     }
 
+    /// <summary>A scanned file opens its review; any other shows what was found.</summary>
     private async Task ShowPeekAsync(MediaItemViewModel target)
     {
+        if (ViewModel.CanReview(target) && target.Item.Scan is { } scan)
+        {
+            try
+            {
+                var saved = await Dialogs.ReviewWordsAsync(
+                    XamlRoot, target.FileName, scan.Occurrences,
+                    (start, seconds, token) => ViewModel.PrepareListeningAsync(target, scan.Audio.Ordinal, null, start, token, seconds));
+
+                if (saved) ViewModel.ReviewSaved(target);
+            }
+            finally
+            {
+                MainViewModel.CleanupListening();
+            }
+
+            return;
+        }
+
         var content = await ViewModel.BuildPeekAsync(target);
         await Dialogs.ShowPeekAsync(XamlRoot, content);
     }

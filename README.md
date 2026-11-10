@@ -21,6 +21,9 @@ It's made for families, for watching with kids, or for anyone who would rather s
   phrases.
 - **Clean subtitles as well.** It can add subtitles with the filtered words blanked out.
 - **Shows its work.** Click the hit count to see every word it found and exactly when.
+- **Lets you check first.** With *Review words before censoring* on, it finds the words in every
+  film, then lets you play each one and untick any it misheard (a "fork" in a heavy accent) before
+  anything is muted.
 - **Works through a whole library.** Drop in films or entire folders and let it run; one problem
   file never stops the rest. It can put the PC to sleep, hibernate, restart or shut it down when the queue is done.
 - **Audiobooks and podcasts too.** MP3, M4B, FLAC and other audio files are cleaned the same way
@@ -155,6 +158,20 @@ Build and pack an update release:
   the video), the speech model and whether it transcribed or reused a saved transcript, how many
   subtitle words were matched to it, and the audio track and whether only its dialogue channels
   were muted. Hovering the subtitle badge shows the same for the subtitles.
+- **Review words before censoring** (Settings → Filter, off by default) splits Censor in two. The
+  button reads **Scan** first: it finds the words in every file not scanned yet and changes nothing
+  (the row says "Ready for review"). Clicking the word count opens the review: one row per moment a
+  word is heard (the English pass, the multilingual pass and the subtitles at the same moment are one
+  row), with the subtitle line, the words the model heard around it, and Play for a few seconds of
+  the track. An unticked row is left in, in every channel. Once every file is scanned the button
+  reads **Censor** and mutes the rest; it asks first if a file was not reviewed. Files added during
+  that run, or whose subtitles or Generate tick change, are scanned again first, and so is every
+  scan when the filter, padding or speech model changes. The scans live in memory only: closing the
+  app asks first. A headless `-start` run (MediaPilot's) only scans too, reports the files as
+  `Scanned` with no output, and hands them to the window (opening it if needed), which finds their
+  words again from the saved transcripts and waits for the review. A word left in also stays
+  readable in the subtitle line on screen at that moment (and that line stays blank in the Censored
+  track); a line that has the same word both left in and muted keeps both masked.
 - **Choose subtitle track…** (right-click) lists the subtitle tracks inside the video and picks the
   one to read, ahead of an `.srt` beside it. Automatic picks by the preferred language.
 - **Listen to channels…** (right-click) plays 20 seconds of each audio channel on its own, from a
@@ -228,7 +245,12 @@ A headless run also takes these options:
 | `--progress` | One JSON line on stdout per change of step or whole percent, at most one a second, plus every status change: `{"file":"…","status":"Running","step":"Encoding","progress":42.5}` |
 | `--cancel-event <name>` | Stops the run when the caller signals this named event (`Local\…`). The file being worked on is cancelled cleanly, so no `.partial` output is left behind |
 
-Its exit code: `0` every file succeeded or was skipped, `1` at least one failed or was cancelled,
+With **Review words before censoring** on, `-start` censors nothing: each file is only scanned
+(status `Scanned`, no `output`, exit code `0`, nothing deleted), and the scanned files are handed to
+the window with `--review`, which opens it if it isn't running and finds their words for the review.
+`--review` also works on its own: `Cinema Guard.exe "film.mkv" --review`.
+
+Its exit code: `0` every file succeeded, was skipped or waits for the review, `1` at least one failed or was cancelled,
 `2` no video or audio files in the arguments, `3` the run itself crashed (see the log). The report carries the
 same `exitCode`.
 

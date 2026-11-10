@@ -58,6 +58,15 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The files a running queue has still to start, in queue order. The runner takes from it on its own thread.</summary>
     private readonly List<MediaItem> _pending = [];
 
+    /// <summary>The running queue only finds words, for the review (Review words before censoring).</summary>
+    private bool _scanRound;
+
+    /// <summary>
+    /// The running queue censors reviewed files: a file added meanwhile, or one whose scan was dropped, waits
+    /// to be scanned and reviewed instead of being censored unseen.
+    /// </summary>
+    private bool _reviewedRound;
+
     private readonly SpeechService _speech;
 
     public MainViewModel(
@@ -100,6 +109,10 @@ public sealed partial class MainViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(Settings));
             OnPropertyChanged(nameof(SpeechSummary));
+
+            // A running queue's files are left alone; Censor checks them again before it starts.
+            if (!IsBusy) DropStaleScans();
+            UpdateAggregates();
         });
         _speech.Models.Changed += () => _dispatcher.TryEnqueue(() => OnPropertyChanged(nameof(SpeechSummary)));
         _puller.Changed += OnPullerChanged;
@@ -203,10 +216,18 @@ public sealed partial class MainViewModel : ObservableObject
         media.SubtitleSource = media.SubtitleSourceOnDisk();
         media.ExpectedSeconds = RunHistory.Default.EstimateFile(full, media.GenerateSubtitles);
 
-        Items.Add(new MediaItemViewModel(media));
+        var row = new MediaItemViewModel(media);
 
-        // A file added while the queue runs joins the end of it.
-        if (IsRunning)
+        // Ticking Generate or Extract drops a scan, which can change what Censor does next.
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MediaItemViewModel.GenerateSubtitles) or nameof(MediaItemViewModel.ExtractSubtitles)) UpdateAggregates();
+        };
+
+        Items.Add(row);
+
+        // A file added while the queue runs joins the end of it, unless it has to be reviewed first.
+        if (IsRunning && !_reviewedRound)
         {
             lock (_pending) _pending.Add(media);
         }
@@ -245,11 +266,18 @@ public sealed partial class MainViewModel : ObservableObject
     {
         lock (_pending)
         {
-            if (_pending.Count == 0) return null;
+            while (_pending.Count > 0)
+            {
+                var next = _pending[0];
+                _pending.RemoveAt(0);
 
-            var next = _pending[0];
-            _pending.RemoveAt(0);
-            return next;
+                // Its scan was dropped since Censor was pressed (its subtitles changed): it is scanned and reviewed again first.
+                if (_reviewedRound && next.Scan is null) continue;
+
+                return next;
+            }
+
+            return null;
         }
     }
 
@@ -278,6 +306,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        item.Item.DropScan();
         item.Item.CustomSubtitlePath = path;
         item.Item.SubtitleStreamIndex = null;
         item.Item.SubtitleSource = "Selected file";
@@ -315,6 +344,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (IsBusy) return;
 
         var item = target.Item;
+        if (item.SubtitleStreamIndex != streamIndex) item.DropScan();
         item.SubtitleStreamIndex = streamIndex;
 
         if (streamIndex is not null && probe.SubtitleStreams.FirstOrDefault(s => s.Index == streamIndex) is { } stream)
@@ -350,10 +380,11 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Twenty seconds of one channel (or the whole track when <paramref name="channel"/> is null) from
-    /// <paramref name="startSeconds"/>, as a wav to play; null when FFmpeg could not make it.
+    /// Twenty seconds (or <paramref name="seconds"/>) of one channel, or the whole track when <paramref name="channel"/>
+    /// is null, from <paramref name="startSeconds"/>, as a wav to play; null when FFmpeg could not make it.
     /// </summary>
-    public async Task<string?> PrepareListeningAsync(MediaItemViewModel target, int audioOrdinal, string? channel, double startSeconds, CancellationToken cancellationToken)
+    public async Task<string?> PrepareListeningAsync(
+        MediaItemViewModel target, int audioOrdinal, string? channel, double startSeconds, CancellationToken cancellationToken, double seconds = 20)
     {
         var ffmpeg = _locator.ResolveFfmpeg(Settings);
         if (ffmpeg is null) return null;
@@ -362,7 +393,7 @@ public sealed partial class MainViewModel : ObservableObject
         var path = Path.Combine(ListenFolder, $"{Guid.NewGuid():N}.wav");
 
         var result = await _runner.RunAsync(
-            new ProcessSpec(ffmpeg, FfmpegCommands.ChannelPreview(target.Item.InputPath, audioOrdinal, channel, startSeconds, 20, path)),
+            new ProcessSpec(ffmpeg, FfmpegCommands.ChannelPreview(target.Item.InputPath, audioOrdinal, channel, startSeconds, seconds, path)),
             cancellationToken: cancellationToken);
 
         if (result.Success && File.Exists(path)) return path;
@@ -429,14 +460,20 @@ public sealed partial class MainViewModel : ObservableObject
 
         var completed = false;
 
+        // Scans the filter or settings no longer fit are found again, whichever way the queue runs.
+        DropStaleScans();
+        var (targets, scanOnly) = PlanRound();
+
         IsRunning = true;
         IsSummaryOpen = false;
         OverallProgress = 0;
+        _scanRound = scanOnly;
+        _reviewedRound = Settings.ReviewBeforeCensoring && !scanOnly;
         _cancellation = new CancellationTokenSource();
         _clock.Restart();
         _clockTimer.Start();
 
-        foreach (var item in Items) item.ResetForRun();
+        foreach (var item in targets) item.ResetForRun();
         UpdateAggregates();
 
         try
@@ -444,23 +481,34 @@ public sealed partial class MainViewModel : ObservableObject
             lock (_pending)
             {
                 _pending.Clear();
-                _pending.AddRange(Items.Select(item => item.Item));
+                _pending.AddRange(targets.Select(item => item.Item));
             }
 
             var token = _cancellation.Token;
 
             // A copy, so editing the filter or settings mid-run never changes a file halfway through.
             var settings = Settings.Clone();
-            var summary = await Task.Run(() => _queueRunner.RunAsync(TakeNext, settings, token), token);
+            var summary = await Task.Run(() => _queueRunner.RunAsync(TakeNext, settings, token, scanOnly), token);
 
             StatusText = summary.Describe();
-            ShowSummary(
-                summary.Fits ? "Finished" : "Finished with problems",
-                $"{summary.Describe()} in {Format(summary.Elapsed)}.",
-                summary.Fits ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
 
-            // Stop pressed near the end still counts as stopped.
-            completed = !token.IsCancellationRequested;
+            if (scanOnly && summary.Scanned > 0)
+            {
+                ShowSummary(
+                    "Ready for review",
+                    $"{summary.Describe()} in {Format(summary.Elapsed)}. Click each file's word count to check its words and untick any to leave in, then press Censor.",
+                    summary.Fits ? InfoBarSeverity.Informational : InfoBarSeverity.Warning);
+            }
+            else
+            {
+                ShowSummary(
+                    summary.Fits ? "Finished" : "Finished with problems",
+                    $"{summary.Describe()} in {Format(summary.Elapsed)}.",
+                    summary.Fits ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+            }
+
+            // Stop pressed near the end still counts as stopped. A scan is not the end: the files still wait for Censor.
+            completed = !token.IsCancellationRequested && !scanOnly;
         }
         catch (OperationCanceledException)
         {
@@ -476,15 +524,119 @@ public sealed partial class MainViewModel : ObservableObject
         finally
         {
             IsRunning = false;
+            _scanRound = false;
+            _reviewedRound = false;
             lock (_pending) _pending.Clear();
             _clock.Stop();
             _clockTimer.Stop();
             _cancellation?.Dispose();
             _cancellation = null;
+
+            // Reviewed files a stopped queue never reached go back to waiting for Censor, review intact.
+            foreach (var item in Items.Where(item => item.Item.Scan is not null && item.Item.StartedAt is null))
+                ShowScanned(item);
+
             UpdateAggregates();
         }
 
         return completed;
+    }
+
+    /// <summary>
+    /// Which files this Censor runs, and whether it only finds their words. With Review words before censoring:
+    /// files not yet scanned are scanned; once none are left, the scanned ones are censored; with neither, the
+    /// whole queue starts over with a scan. Without it, every file runs, a scanned one from its scan.
+    /// </summary>
+    private (List<MediaItemViewModel> Targets, bool ScanOnly) PlanRound()
+    {
+        if (!Settings.ReviewBeforeCensoring) return (Items.ToList(), false);
+
+        var toScan = Items.Where(NeedsScan).ToList();
+        if (toScan.Count > 0) return (toScan, true);
+
+        var scanned = Items.Where(item => item.Item.Scan is not null).ToList();
+        if (scanned.Count > 0) return (scanned, false);
+
+        return (Items.ToList(), true);
+    }
+
+    /// <summary>Not scanned since it was added or its subtitles changed, or its scan was stopped.</summary>
+    private static bool NeedsScan(MediaItemViewModel item) =>
+        item.Item.Scan is null && item.Item.Status is MediaStatus.Waiting or MediaStatus.Cancelled;
+
+    /// <summary>What the next Censor does with Review words before censoring on: find the words, or mute them.</summary>
+    public bool NextRunScans => Settings.ReviewBeforeCensoring && !IsRunning && PlanRound().ScanOnly;
+
+    /// <summary>
+    /// Files handed over for the review (a -start run with the review on, or --review): scanned now, so they show
+    /// Ready for review. A -start run saved their transcripts, so this only reads them again. Never censors: when
+    /// the next run would not be a scan, or a queue is running (a scan picks new files up itself), it does nothing.
+    /// </summary>
+    public async Task ScanForReviewAsync()
+    {
+        if (IsBusy || !NextRunScans) return;
+        await StartAsync();
+    }
+
+    /// <summary>Scanned files whose words nobody has looked at yet; Censor asks first.</summary>
+    public int UnreviewedCount() =>
+        Settings.ReviewBeforeCensoring && !NextRunScans ? Items.Count(item => item.Item.Scan is { Reviewed: false }) : 0;
+
+    /// <summary>Files holding a scan that closing the app would forget.</summary>
+    public int HeldScanCount => Items.Count(item => item.Item.Scan is not null);
+
+    /// <summary>A scan whose words were found with another filter, padding or speech model is found again.</summary>
+    private void DropStaleScans()
+    {
+        var key = ScanResult.KeyFor(Settings);
+
+        foreach (var item in Items.Where(item => item.Item.Scan is { } scan && scan.SettingsKey != key && item.Item.Status != MediaStatus.Running))
+        {
+            item.Item.DropScan();
+            item.Item.Message = "The filter or speech model changed after the scan, so the words are found again on the next Censor.";
+            item.Sync();
+        }
+    }
+
+    // ---------------------------------------------------------------- review
+
+    /// <summary>The words of a scanned file can be reviewed: not while it, or a queue censoring reviewed files, runs.</summary>
+    public bool CanReview(MediaItemViewModel target) =>
+        target.Item.Scan is not null && target.Item.Status != MediaStatus.Running && !(IsRunning && !_scanRound);
+
+    /// <summary>The review was saved: the row says how many words are left in.</summary>
+    public void ReviewSaved(MediaItemViewModel target)
+    {
+        if (target.Item.Scan is not { } scan) return;
+
+        scan.Reviewed = true;
+        if (target.Item.Status is MediaStatus.Scanned or MediaStatus.Waiting) ShowScanned(target);
+        else target.Sync();
+
+        UpdateAggregates();
+    }
+
+    /// <summary>A file waiting with its scan: the status and message say where its review stands.</summary>
+    private static void ShowScanned(MediaItemViewModel target)
+    {
+        var item = target.Item;
+        if (item.Scan is not { } scan) return;
+
+        var count = scan.Occurrences.Count;
+        var leftIn = scan.LeftInCount;
+
+        item.Status = MediaStatus.Scanned;
+        item.StatusText = item.StatusLabel;
+        item.Progress = 100;
+        item.Message = count == 0
+            ? "No filtered words were found, so there is nothing to review."
+            : !scan.Reviewed
+                ? $"{count} word{(count == 1 ? string.Empty : "s")} to review: click the word count, untick any to leave in, then press Censor."
+                : leftIn == 0
+                    ? $"All {count} words will be muted."
+                    : $"{leftIn} of {count} words left in; the rest will be muted.";
+
+        target.Sync();
     }
 
     /// <summary>Stops the queue, or the subtitle action that is running.</summary>
@@ -565,6 +717,7 @@ public sealed partial class MainViewModel : ObservableObject
 
                     if (path is null) throw new Exception("FFmpeg could not extract the track.");
 
+                    item.DropScan();
                     item.CustomSubtitlePath = path;
                     item.SubtitleSource = "Embedded";
                     item.StatusText = "Subtitles saved";
@@ -676,6 +829,7 @@ public sealed partial class MainViewModel : ObservableObject
                     }
                     else if (result.Success && result.SubtitlePath is not null)
                     {
+                        item.DropScan();
                         item.CustomSubtitlePath = result.SubtitlePath;
                         item.SubtitleSource = "Downloaded";
                         target.GenerateSubtitles = false;
@@ -833,9 +987,30 @@ public sealed partial class MainViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// For the Queue page coming back into view: the settings may have changed meanwhile (they apply before
+    /// they are saved), which can make scans stale and changes what Censor does next.
+    /// </summary>
+    public void RefreshQueueState()
+    {
+        if (!IsBusy) DropStaleScans();
+        UpdateAggregates();
+    }
+
+    /// <summary>The primary button: Scan while Review words before censoring has files to find words in, else Censor.</summary>
+    public string StartText => NextRunScans ? "Scan" : "Censor";
+
+    public string StartToolTip => NextRunScans
+        ? "Find the words in each file not scanned yet, without changing anything. Then review them and press Censor."
+        : Settings.ReviewBeforeCensoring
+            ? "Censor the scanned files, leaving in the words you unticked. Each gets a muted copy beside it."
+            : "Censor every file in the queue, one after another. Each gets a muted copy beside it.";
+
     private void UpdateAggregates()
     {
         IsEmpty = Items.Count == 0;
+        OnPropertyChanged(nameof(StartText));
+        OnPropertyChanged(nameof(StartToolTip));
 
         if (Items.Count == 0)
         {
@@ -846,16 +1021,18 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         var finished = Items.Count(item => item.Item.IsFinished);
+        var scanned = Items.Count(item => item.Item.Status == MediaStatus.Scanned);
         // Each file weighs what it is expected to take, so a long film moves the total more than a short episode.
         var weights = Items.Sum(item => Math.Max(1, item.Item.ExpectedSeconds));
         var progress = Items.Sum(item => Math.Max(1, item.Item.ExpectedSeconds) * (item.Item.Status switch
         {
-            MediaStatus.Succeeded or MediaStatus.Skipped or MediaStatus.Failed or MediaStatus.Cancelled => 100,
+            MediaStatus.Succeeded or MediaStatus.Skipped or MediaStatus.Failed or MediaStatus.Cancelled or MediaStatus.Scanned => 100,
             _ => item.Item.Progress,
         })) / weights;
 
         OverallProgress = progress;
-        QueueSummaryText = $"{Items.Count} file{(Items.Count == 1 ? string.Empty : "s")} · {finished} finished";
+        QueueSummaryText = $"{Items.Count} file{(Items.Count == 1 ? string.Empty : "s")} · {finished} finished" +
+                           (scanned > 0 ? $" · {scanned} ready for review" : string.Empty);
         OverallProgressText = string.Empty;
 
         if (!IsRunning) return;

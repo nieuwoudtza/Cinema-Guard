@@ -14,11 +14,15 @@ public sealed record LaunchArguments(
     string? ReportPath = null,
     bool Progress = false,
     string? CancelEvent = null,
-    bool Help = false)
+    bool Help = false,
+    bool Review = false)
 {
     public const string ReportOption = "--report";
     public const string ProgressOption = "--progress";
     public const string CancelEventOption = "--cancel-event";
+
+    /// <summary>Open the window with the files and scan them for the review; how a -start run hands them over.</summary>
+    public const string ReviewOption = "--review";
 
     /// <summary>
     /// What `--help` prints and Settings → Command line shows: every option, the exit codes and where the
@@ -37,6 +41,11 @@ public sealed record LaunchArguments(
 
         Options
           -start, --start           Run headless: no window and no dialogs. Uses the saved settings.
+                                    With Review words before censoring on, the files are only scanned
+                                    (status Scanned, no output, nothing deleted) and then wait in the
+                                    window, which opens if needed, for the review and Censor.
+          --review                  Open the window with the files and find their words for the
+                                    review. What -start hands over with; it works on its own too.
           --report <path>           Also write the run's JSON report to <path> (with -start).
           --progress                One JSON line on stdout per change of step or whole percent, at most
                                     one a second, plus every status change (with -start):
@@ -47,10 +56,11 @@ public sealed record LaunchArguments(
 
         Report
           Every headless run writes %LOCALAPPDATA%\CinemaGuard\logs\last-run.json: per file the input,
-          status, message, output and hit count, plus the summary and exit code.
+          status, message, output and hit count, plus the summary and exit code. A file waiting for the
+          review has status Scanned and no output yet.
 
         Exit codes (-start)
-          0   Every file succeeded or was skipped
+          0   Every file succeeded, was skipped or waits for the review
           1   At least one file failed or was cancelled
           2   No video or audio files in the arguments
           3   The run itself crashed (see the log in %LOCALAPPDATA%\CinemaGuard\logs)
@@ -65,6 +75,7 @@ public sealed record LaunchArguments(
         var headless = false;
         var progress = false;
         var help = false;
+        var review = false;
         string? report = null;
         string? cancelEvent = null;
 
@@ -84,6 +95,10 @@ public sealed record LaunchArguments(
             else if (Is(argument, ProgressOption))
             {
                 progress = true;
+            }
+            else if (Is(argument, ReviewOption))
+            {
+                review = true;
             }
             else if (Is(argument, ReportOption))
             {
@@ -105,7 +120,8 @@ public sealed record LaunchArguments(
             string.IsNullOrWhiteSpace(report) ? null : report,
             progress,
             string.IsNullOrWhiteSpace(cancelEvent) ? null : cancelEvent,
-            help);
+            help,
+            review);
     }
 
     private static bool Is(string argument, string option) =>

@@ -5,7 +5,8 @@ using CinemaGuard.Core.Phonon;
 
 namespace CinemaGuard.Core.Pipeline;
 
-public enum MediaStatus { Waiting, Running, Succeeded, Skipped, Failed, Cancelled }
+/// <summary><see cref="Scanned"/>: the words were found and wait for the review; the file is not censored yet.</summary>
+public enum MediaStatus { Waiting, Running, Succeeded, Skipped, Failed, Cancelled, Scanned }
 
 /// <summary>One queued file and everything the pipeline learns about it.</summary>
 public sealed class MediaItem
@@ -232,6 +233,13 @@ public sealed class MediaItem
     public MediaProbe? Probe { get; set; }
     public AudioSelection? Audio { get; set; }
     public HitSet? Hits { get; set; }
+
+    /// <summary>
+    /// The words found by a scan (Review words before censoring), held until the file is censored; null
+    /// otherwise. Kept when censoring fails or is stopped, so the next Censor carries on from it.
+    /// </summary>
+    public ScanResult? Scan { get; set; }
+
     public List<ForeignSpan> ForeignSpans { get; set; } = [];
     public SyncFit SyncFit { get; set; } = SyncFit.Identity;
     public string Language { get; set; } = "und";
@@ -247,8 +255,25 @@ public sealed class MediaItem
         MediaStatus.Skipped => "Skipped",
         MediaStatus.Failed => "Failed",
         MediaStatus.Cancelled => "Cancelled",
+        MediaStatus.Scanned => Scan?.Reviewed == true ? "Reviewed" : "Ready for review",
         _ => StatusText,
     };
+
+    /// <summary>
+    /// Forgets a scan that no longer fits the file (its subtitles or Generate changed): the file is scanned
+    /// again on the next Censor.
+    /// </summary>
+    public void DropScan()
+    {
+        if (Scan is null || Status == MediaStatus.Running) return;
+
+        Scan = null;
+        Hits = null;
+        Status = MediaStatus.Waiting;
+        StatusText = "Waiting";
+        Message = null;
+        Progress = 0;
+    }
 }
 
 /// <summary>Short-lived scratch space per file; nothing is written next to the media until it is finished.</summary>

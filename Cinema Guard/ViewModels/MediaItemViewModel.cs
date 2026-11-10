@@ -37,6 +37,7 @@ public sealed partial class MediaItemViewModel : ObservableObject
             if (Item.GenerateSubtitles == value) return;
             Item.GenerateSubtitles = value;
             OnPropertyChanged();
+            DropScan();
         }
     }
 
@@ -48,7 +49,17 @@ public sealed partial class MediaItemViewModel : ObservableObject
             if (Item.ExtractSubtitles == value) return;
             Item.ExtractSubtitles = value;
             OnPropertyChanged();
+            DropScan();
         }
+    }
+
+    /// <summary>What the words are found in changed: a scan held for the review no longer fits, so the file is scanned again.</summary>
+    private void DropScan()
+    {
+        if (Item.Scan is null) return;
+
+        Item.DropScan();
+        Sync();
     }
 
     [ObservableProperty] private string _status = "Waiting";
@@ -75,6 +86,7 @@ public sealed partial class MediaItemViewModel : ObservableObject
     [ObservableProperty] private string _sourceToolTip = string.Empty;
     [ObservableProperty] private int _hitCount;
     [ObservableProperty] private string _hitText = string.Empty;
+    [ObservableProperty] private string _hitToolTip = string.Empty;
     [ObservableProperty] private Visibility _hitsVisibility = Visibility.Collapsed;
     [ObservableProperty] private string _resultGlyph = "\uE823";
     [ObservableProperty] private Brush _resultBrush = NeutralBrush;
@@ -133,13 +145,30 @@ public sealed partial class MediaItemViewModel : ObservableObject
                 ? "No subtitle file found. A track inside the video is read when you press Censor; right-click and Choose subtitle track… to pick one."
                 : "The subtitles this file uses. Right-click and Choose subtitle track… to use a track inside the video instead.";
 
-        HitCount = Item.HitCount;
-        HitText = HitCount == 1 ? "1 word" : $"{HitCount} words";
+        // A scanned file counts its moments, which is what the review lists, and how many it leaves in.
+        if (Item.Scan is { } scan)
+        {
+            var count = scan.Occurrences.Count;
+            var leftIn = scan.LeftInCount;
+
+            HitCount = count;
+            HitText = leftIn > 0 ? $"{count - leftIn} of {count} words" : count == 1 ? "1 word" : $"{count} words";
+            HitToolTip = "Review the words found: play each one, and untick any to leave in";
+        }
+        else
+        {
+            HitCount = Item.HitCount;
+            HitText = HitCount == 1 ? "1 word" : $"{HitCount} words";
+            HitToolTip = "Show the filtered words, and which subtitles, speech model and audio channels were used";
+        }
+
         HitsVisibility = HitCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         OnPropertyChanged(nameof(HasHits));
 
         var (glyph, brush) = Item.Status switch
         {
+            MediaStatus.Scanned when Item.Scan?.Reviewed == true => ("\uE73E", RunningBrush),
+            MediaStatus.Scanned => ("\uE7B3", WarningBrush),
             MediaStatus.Running => ("\uE895", RunningBrush),
             MediaStatus.Succeeded => ("\uE73E", SuccessBrush),
             MediaStatus.Skipped => ("\uE7BA", WarningBrush),
@@ -172,7 +201,8 @@ public sealed partial class MediaItemViewModel : ObservableObject
         Item.FinishedAt = null;
 
         // Its weight in the overall percentage until the run knows more (Generate may have changed since it was added).
-        Item.ExpectedSeconds = RunHistory.Default.EstimateFile(Item.InputPath, Item.GenerateSubtitles);
+        // A scanned file has its words already: only censoring is left.
+        Item.ExpectedSeconds = RunHistory.Default.EstimateFile(Item.InputPath, Item.GenerateSubtitles && Item.Scan is null);
         Sync();
     }
 }

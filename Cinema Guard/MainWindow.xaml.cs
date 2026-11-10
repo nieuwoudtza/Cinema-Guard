@@ -31,6 +31,9 @@ public sealed partial class MainWindow : Window
     private readonly TaskbarProgress _taskbar;
     private readonly CancellationTokenSource _updateCheck = new();
 
+    /// <summary>Closing was confirmed despite scans waiting for Censor; the next close goes through.</summary>
+    private bool _closeConfirmed;
+
     public MainViewModel ViewModel => App.MainViewModel!;
 
     public MainWindow()
@@ -68,6 +71,39 @@ public sealed partial class MainWindow : Window
         _taskbar = new TaskbarProgress(WinRT.Interop.WindowNative.GetWindowHandle(this));
 
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+        // Scans waiting for Censor live in memory only: closing forgets them and their review, so say so first.
+        AppWindow.Closing += async (_, e) =>
+        {
+            var held = ViewModel.HeldScanCount;
+            if (held == 0 || _closeConfirmed) return;
+
+            e.Cancel = true;
+            bool close;
+
+            try
+            {
+                close = await Dialogs.ConfirmAsync(
+                    Content.XamlRoot,
+                    "Close Cinema Guard?",
+                    $"{(held == 1 ? "One file has" : $"{held} files have")} been scanned but not censored yet. Closing forgets " +
+                    $"{(held == 1 ? "its words and your review of them; it is" : "their words and your review of them; they are")} scanned again next time.",
+                    "Close",
+                    "Keep open");
+            }
+            catch (Exception ex)
+            {
+                // Another dialog is open (only one can be): the close was asked for, so it goes ahead.
+                CinemaGuard.Core.Logging.Log.Warn($"Could not ask before closing: {ex.Message}");
+                close = true;
+            }
+
+            if (!close) return;
+
+            _closeConfirmed = true;
+            Close();
+        };
+
         Closed += (_, _) =>
         {
             _updateCheck.Cancel();
