@@ -255,9 +255,39 @@
 
         const wantOn = keepOn || settings.showCaptions;
         if (on !== wantOn && settled) clickCaptions(player);
+        if (on && settled) reloadIfNotDrawn(player, engine, session);
 
         captionWatch.key = session.key;
         captionWatch.wasOn = captionsOn(player);
+    }
+
+    // YouTube sometimes draws nothing with captions on: the CC button pressed, a track chosen, no words on screen.
+    // When the caption file has a line now and none has appeared for a few seconds, YouTube reloads its captions.
+    const drawWatch = { key: null, since: null, lastReload: -Infinity, reloads: 0 };
+
+    function reloadIfNotDrawn(player, engine, session) {
+        if (drawWatch.key !== session.key) Object.assign(drawWatch, { key: session.key, since: null, reloads: 0 });
+        const video = youtube.video();
+        const time = video?.currentTime;
+        const speaking = !!video && !video.paused && Number.isFinite(time) &&
+            [...session.sources.values()].some(source => source.cues.some(cue => cue.start <= time - 0.5 && cue.end >= time && cue.text.trim()));
+        if (!speaking || player.querySelector('.ytp-caption-segment')) {
+            drawWatch.since = null;
+            return;
+        }
+
+        const now = performance.now();
+        drawWatch.since ??= now;
+        if (now - drawWatch.since < 3000 || now - drawWatch.lastReload < 15000 || drawWatch.reloads >= 3) return;
+        drawWatch.since = null;
+        drawWatch.lastReload = now;
+        drawWatch.reloads++;
+        try {
+            player.setOption('captions', 'reload', true);
+            engine.note(session, 'YouTube showed no captions while they were on, so they were reloaded');
+        } catch (error) {
+            engine.note(session, `YouTube showed no captions while they were on, and reloading them failed: ${error.message}`);
+        }
     }
 
     // The viewer's own CC presses (the button or the C key) only show or hide the captions while they are kept on.

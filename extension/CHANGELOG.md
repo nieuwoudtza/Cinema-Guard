@@ -9,6 +9,7 @@ Each version is a `## <version> — <date>` heading followed by one `- ` line pe
 ## Unreleased
 
 - Fixed: in YouTube's new player, hidden captions looked the same as captions in view, so the CC button seemed on while nothing showed. The button is now dimmed and struck through while captions are kept on out of sight; press it (or C) to show them.
+- Fixed: YouTube sometimes drew no captions at all while they were on, with CC pressed and a track chosen. When the captions have a line and none has shown for a few seconds, the extension now has YouTube reload them, and says so in the log.
 - The log on the popup says each time captions are hidden or shown, including from the popup, the options page or another tab.
 
 ## 1.0.3 — 10 November 2026
