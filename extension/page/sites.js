@@ -287,7 +287,10 @@
                 toggleShown(event);
             } else {
                 // The button works as usual; its new state is remembered.
-                engine.saveSettings({ showCaptions: !captionsOn(youtube.player()) });
+                const shown = !captionsOn(youtube.player());
+                engine.saveSettings({ showCaptions: shown });
+                const session = engine.session();
+                if (session) engine.note(session, shown ? 'Captions turned on' : 'Captions turned off');
             }
         }, true);
 

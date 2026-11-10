@@ -29,8 +29,15 @@
     });
 
     function receiveSettings(payload) {
+        const shownBefore = settings?.showCaptions;
         settings = S.normalise(payload?.settings);
         allowChannels = Array.isArray(payload?.allowChannels) ? payload.allowChannels : [];
+        // Changes made on this page are already applied, so a change here came from somewhere else.
+        if (session && typeof shownBefore === 'boolean' && typeof settings.showCaptions === 'boolean' && settings.showCaptions !== shownBefore) {
+            note(session, settings.showCaptions
+                ? 'Captions shown from the popup, the options page or another tab'
+                : 'Captions hidden from the popup, the options page or another tab; they stay on out of sight');
+        }
         applySettings();
         if (!started) start();
     }
@@ -663,8 +670,15 @@
 
     const STYLES = `
         .cg-hidden-captions .ytp-caption-window-container { visibility: hidden !important; }
-        .cg-hidden-captions .ytp-subtitles-button[aria-pressed="true"]::after { display: none !important; }
-        .cg-hidden-captions .ytp-subtitles-button { opacity: 0.6; }
+        /* Hidden captions: CC is dimmed and struck through, in place of its red "on" line. The player's own rules are
+           more specific, hence !important. */
+        .cg-hidden-captions .ytp-chrome-controls .ytp-subtitles-button { opacity: 0.6 !important; position: relative !important; }
+        .cg-hidden-captions .ytp-chrome-controls .ytp-subtitles-button::after {
+            content: '' !important; display: block !important; position: absolute !important; inset: auto !important;
+            left: 50% !important; top: 50% !important; width: 26px !important; height: 2px !important; margin: 0 !important;
+            border-radius: 1px !important; background: #fff !important; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5) !important;
+            transform: translate(-50%, -50%) rotate(-45deg) !important; pointer-events: none; z-index: 1;
+        }
         html.cg-hide-site-captions .player-timedtext { visibility: hidden !important; }
         .cg-markers { position: absolute; inset: 0; pointer-events: none; z-index: 33; }
         .cg-marker { position: absolute; top: 0; bottom: 0; background: #f5d367; opacity: 0.9; border-radius: 1px; }`;

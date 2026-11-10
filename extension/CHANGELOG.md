@@ -6,6 +6,11 @@ list under What's new, and the popup points to it after an update.
 Each version is a `## <version> — <date>` heading followed by one `- ` line per change. Add changes under
 `## Unreleased`; `publish-extension.ps1` turns that heading into the version it packs.
 
+## Unreleased
+
+- Fixed: in YouTube's new player, hidden captions looked the same as captions in view, so the CC button seemed on while nothing showed. The button is now dimmed and struck through while captions are kept on out of sight; press it (or C) to show them.
+- The log on the popup says each time captions are hidden or shown, including from the popup, the options page or another tab.
+
 ## 1.0.3 — 10 November 2026
 
 - What's new: the options page lists the changes in every version, and the popup says when the extension was updated.
