@@ -6,7 +6,7 @@ list under What's new, and the popup points to it after an update.
 Each version is a `## <version> — <date>` heading followed by one `- ` line per change. Add changes under
 `## Unreleased`; `publish-extension.ps1` turns that heading into the version it packs.
 
-## Unreleased
+## 1.0.4 — 11 November 2026
 
 - Fixed: in YouTube's new player, hidden captions looked the same as captions in view, so the CC button seemed on while nothing showed. The button is now dimmed and struck through while captions are kept on out of sight; press it (or C) to show them.
 - Fixed: on some YouTube accounts no captions showed at all while they were on, with CC pressed and a track chosen. The extension pressed CC while the video was still loading, before YouTube had set up its captions; it now waits until the video has played for a second, and YouTube often turns them on by itself before then. Should captions still not show while a line is due, the extension has YouTube reload them and says so in the log.
