@@ -17,11 +17,28 @@
         '.plyr__captions',                            // Plyr
         '.bmpui-ui-subtitle-overlay',                 // Bitmovin
         '.mejs__captions-layer', '.fp-captions',      // MediaElement, Flowplayer
+        '.vds-captions', 'media-captions',            // Vidstack
+        '.art-subtitle',                              // ArtPlayer
+        '.dplayer-subtitle', '.dplayer-subtitles',    // DPlayer
+        '.xgplayer-subtitles', '.xg-text-track',      // xgplayer
+        '.fluid_subtitles_container',                 // Fluid Player
+        '.playkit-subtitles',                         // Kaltura
+        '.theoplayer-texttracks',                     // THEOplayer
+        '.jw-captions',                               // JW Player (newer)
     ].join(', ');
 
-    // The video being watched: the one playing, else the biggest.
+    // Anything else named like a caption. These names also turn up on page headings and buttons, so a match only
+    // counts when it lies over the video and holds plain text (see the engine's caption check).
+    const LIKELY_CAPTIONS = [
+        '[class*="caption" i]', '[class*="subtitle" i]', '[class*="cue" i]', '[class*="timedtext" i]', '[class*="text-track" i]',
+        '[id*="caption" i]', '[id*="subtitle" i]', '[data-part*="cue"]', '[part*="cue"]', '[part*="caption"]',
+    ].join(', ');
+
+    // The video being watched: the one playing, else the biggest. Players built as web components keep it in a
+    // shadow root.
     function mainVideo(root = document) {
-        const videos = [...root.querySelectorAll('video')];
+        let videos = [...root.querySelectorAll('video')];
+        if (videos.length === 0 && root === document) videos = CG.hooks.shadowRoots().flatMap(shadow => [...shadow.querySelectorAll('video')]);
         if (videos.length <= 1) return videos[0] || null;
         const area = video => { const box = video.getBoundingClientRect(); return box.width * box.height; };
         const playing = videos.filter(video => !video.paused && video.readyState > 2);
@@ -42,6 +59,9 @@
         name: location.hostname.replace(/^www\./, ''),
         matches: () => true,
         captionSelector: COMMON_CAPTIONS,
+        // Caption elements found by their name, and caption text found by matching the subtitle file (see the engine).
+        likelyCaptions: LIKELY_CAPTIONS,
+        matchesCueText: true,
         readsTextTracks: true,
         acceptsDownloads: true,
         alignToScreen: true,
@@ -76,6 +96,8 @@
         name: 'YouTube',
         matches: () => /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname),
         captionSelector: '.ytp-caption-segment',
+        likelyCaptions: null,
+        matchesCueText: false,
         readsTextTracks: false,
         acceptsDownloads: false,
         alignToScreen: false,

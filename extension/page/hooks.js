@@ -6,7 +6,7 @@
 
     const { captions } = CG;
     const MAX_BYTES = 6 * 1024 * 1024;
-    const URL_HINT = /timedtext|subtitle|caption|\.vtt|\.ttml|\.dfxp|\.srt|\.ass\b|\.xml|[?&]o=|texttrack|\/tt\//i;
+    const URL_HINT = /timedtext|subtitle|caption|\.vtt|\.ttml|\.dfxp|\.srt|\.ssa\b|\.ass\b|\.xml|[?&]o=|texttrack|\/tt\/|\/subs?\/|[?&/_-]subs?[=._-]|[?&](?:format|fmt)=(?:vtt|srt)/i;
     const TYPE_HINT = /text\/|xml|vtt|ttml|subrip|x-ssa|x-ass/i;
 
     const originalFetch = window.fetch;
@@ -55,6 +55,8 @@
                         if (captions.looksLikeCaptions(start)) deliver(href, new TextDecoder().decode(this.response));
                     } else if ((this.responseType === '' || this.responseType === 'text') && worthReading(href, type)) {
                         deliver(href, this.responseText);
+                    } else if (this.responseType === 'blob' && this.response && this.response.size <= MAX_BYTES && URL_HINT.test(href)) {
+                        this.response.text().then(body => deliver(href, body)).catch(() => {});
                     }
                 } catch { /* ignore */ }
             });
@@ -62,10 +64,36 @@
         return originalOpen.apply(this, arguments);
     };
 
+    // Shadow roots, open and closed: some players draw their captions inside one, out of reach of the page's DOM.
+    const shadowRoots = new Set(); // WeakRefs
+    const shadowListeners = new Set();
+    const originalAttachShadow = Element.prototype.attachShadow;
+    if (originalAttachShadow) {
+        Element.prototype.attachShadow = function () {
+            const root = originalAttachShadow.apply(this, arguments);
+            try {
+                shadowRoots.add(new WeakRef(root));
+                for (const listener of shadowListeners) listener(root);
+            } catch { /* never break the page's own elements */ }
+            return root;
+        };
+    }
+
+    function liveShadowRoots() {
+        const roots = [];
+        for (const ref of shadowRoots) {
+            const root = ref.deref();
+            if (root) roots.push(root); else shadowRoots.delete(ref);
+        }
+        return roots;
+    }
+
     CG.hooks = {
         // The page's own fetch, unwatched, for the extension's requests. It must be called on the window.
         originalFetch: (...args) => originalFetch.apply(window, args),
         recent,
         listen: listener => listeners.add(listener),
+        shadowRoots: liveShadowRoots,
+        onShadowRoot: listener => shadowListeners.add(listener),
     };
 })();

@@ -57,20 +57,6 @@ main {
 .stat { padding: 8px 10px; border-radius: 6px; background: var(--subtle-hover); }
 .stat b { display: block; font: 600 18px/24px var(--font-display); font-variant-numeric: tabular-nums; }
 
-.muting {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 10px;
-    padding: 6px 10px;
-    border-radius: 6px;
-    background: var(--critical-subtle);
-    color: var(--critical);
-    font-weight: 600;
-    font-size: 12px;
-}
-.muting svg { width: 16px; height: 16px; fill: currentColor; }
-
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .actions .button { flex: 1 1 auto; }
 

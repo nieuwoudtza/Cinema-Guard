@@ -33,6 +33,7 @@
     --caution-subtle: #fff4ce;
     --critical: #c42b1c;
     --critical-subtle: #fde7e9;
+    --critical-text: #ffffff;
     --marker: #f5d367;
 
     --radius: 8px;
@@ -68,6 +69,7 @@
         --caution-subtle: #433519;
         --critical: #ff99a4;
         --critical-subtle: #442726;
+        --critical-text: #1f1f1f;
     }
 }
 
@@ -199,25 +201,31 @@ input.switch[type="checkbox"]:checked { background: var(--accent); border-color:
 input.switch[type="checkbox"]:checked::before { left: 23px; background: var(--accent-text); }
 .switch-label { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; color: var(--text); }
 
-/* Status pills */
+/* Status tags: neutral, like a control, with the status colour only in a solid dot. */
 .pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: var(--subtle-hover);
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--control-stroke);
+    border-radius: var(--radius-control);
+    background: var(--control);
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 16px;
     white-space: nowrap;
 }
-.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.success { background: var(--success-subtle); color: var(--success); }
-.pill.caution { background: var(--caution-subtle); color: var(--caution); }
-.pill.critical { background: var(--critical-subtle); color: var(--critical); }
-.pill.accent { background: var(--accent-subtle); color: var(--accent); }
+.pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); flex-shrink: 0; }
+.pill.success::before { background: var(--success); }
+.pill.caution::before { background: var(--caution); }
+.pill.critical::before { background: var(--critical); }
+.pill.accent::before { background: var(--accent); }
 .pill.plain::before { display: none; }
+/* The one loud state: solid, for a moment that matters now. */
+.pill.alert { border-color: transparent; background: var(--critical); color: var(--critical-text); font-weight: 600; }
+.pill.alert::before { display: none; }
+.pill svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
 
 /* Info bar */
 .infobar {

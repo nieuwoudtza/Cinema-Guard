@@ -22,14 +22,19 @@ If you used the Tampermonkey userscript, turn it off: both would mute and change
 
 | Site | How captions are read |
 |---|---|
-| YouTube (videos, Shorts, embeds on other sites) | Built in. The caption file is fetched in full; auto-generated captions give every word its own time |
-| Any other site | Select Cinema Guard in the toolbar and choose **Turn on**. Uses the video's subtitle tracks, subtitle files the player downloads, or captions as they appear on screen |
-| Netflix, Prime Video, Disney+, Max, Hulu | Not tested yet (they need paid accounts), so off until turned on from the toolbar (**Try it anyway**). Adapters exist in `page/sites.js`; reports go to the GitHub issues |
+| YouTube (videos, Shorts, embeds on other sites) | The caption file is fetched in full; auto-generated captions give every word its own time |
+| Any other site, including players embedded from another site | Uses the video's subtitle tracks, subtitle files the player downloads, or captions as they appear on screen. Captions on screen are blanked wherever the player draws them: its own caption element, an element named like captions over the video, or any text that is part of the subtitle line being spoken (also inside shadow DOM) |
+| Netflix, Prime Video, Disney+, Max, Hulu | Not tested yet (they need paid accounts). Adapters exist in `page/sites.js`; reports go to the GitHub issues |
+
+The scripts run on every site and always read the subtitles; **Options → Sites and channels** decides where they mute
+and blank: everywhere except a blacklist (the default), or only on a whitelist. In whitelist mode the toolbar popup
+asks whether to add a site that isn't on it. Either way a change works at once, without a reload. A page with no
+video costs next to nothing: the engine only starts its timers once a video turns up.
 
 ## Using it
 
 - **Toolbar popup:** on/off switch, what was found in the video playing (select a line to jump to it), don't filter this
-  channel, pause on this site, show or hide captions, and how the captions were found.
+  channel, don't filter this site (or add it to the whitelist), show or hide captions, and how the captions were found.
 - **Options:** the filter (as in the Windows app), mute padding, the fade in and out around each mute (30 ms by
   default), censor character, caption language, YouTube caption behaviour, progress-bar marks, sites and channels,
   statistics, and backup. **Backup → Import** reads the Windows app's `%LOCALAPPDATA%\CinemaGuard\settings.json`.
@@ -45,7 +50,7 @@ If you used the Tampermonkey userscript, turn it off: both would mute and change
 | `shared/` | Word catalogue, matching, settings, caption parsers and mute timing (ports of the Windows app's core) |
 | `page/` | Runs inside the page: request hooks, site adapters, the engine |
 | `content/bridge.js` | Runs beside the page: settings in, state and statistics out |
-| `background.js` | Tab state, badge, statistics, keyboard shortcut, sites turned on by the user |
+| `background.js` | Tab state, badge, statistics, keyboard shortcut |
 | `popup/`, `options/`, `ui/` | The toolbar popup, the options page and their shared look |
 | `CHANGELOG.md` | What changed in each version, read by What's new (`shared/changelog.js`). Add changes under `## Unreleased`; `publish-extension.ps1` names it after the version it packs |
 

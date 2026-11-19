@@ -367,3 +367,6 @@ deploy/desktop/*/
 deploy/chrome-web-store/*.zip
 # The per-build version counter (Directory.Build.targets, publish.ps1); each machine keeps its own.
 build-number.json
+
+# Page snapshots and console logs the Playwright MCP browser tools write into the working folder
+.playwright-mcp/

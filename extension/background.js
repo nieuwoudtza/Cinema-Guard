@@ -1,11 +1,6 @@
-// Background worker: keeps each tab's state for the popup, the toolbar badge, statistics, the keyboard shortcut,
-// and the content scripts for sites the user turned on themselves.
+// Background worker: keeps each tab's state for the popup, the toolbar badge, statistics and the keyboard shortcut.
 importScripts('shared/catalog.js', 'shared/matcher.js', 'shared/settings.js');
 const CG = globalThis.__cinemaGuard;
-
-const PAGE_SCRIPTS = ['shared/catalog.js', 'shared/matcher.js', 'shared/settings.js', 'shared/captions.js', 'shared/hits.js', 'page/hooks.js', 'page/sites.js', 'page/engine.js'];
-const BRIDGE_SCRIPTS = ['content/bridge.js'];
-const BUILT_IN = chrome.runtime.getManifest().content_scripts[0].matches;
 
 // ---- Tab state ----
 // Each frame's latest state. The detections and log come only when they change, so they are kept between updates.
@@ -34,12 +29,25 @@ function storeState(tabId, frameId, state) {
     tabs.set(tabId, frames);
     persistTabs();
     updateBadge(tabId);
+    for (const port of popups) if (port.tabId === tabId) port.postMessage({ type: 'frames', frames: Object.values(frames) });
 }
 
-// The frame that matters for a tab: one with a video, the top frame first.
+// An open popup gets each change as it comes, so "Muting now" shows the moment the sound goes.
+const popups = new Set();
+chrome.runtime.onConnect.addListener(port => {
+    if (!port.name.startsWith('popup:')) return;
+    port.tabId = Number(port.name.slice('popup:'.length));
+    popups.add(port);
+    port.onDisconnect.addListener(() => popups.delete(port));
+});
+
+// The frame that matters for a tab: the one playing the film rather than an advert beside it. A video with captions
+// first, then the longest, then the top frame. The popup picks the same way.
 function mainFrame(frames) {
     const list = Object.values(frames || {});
-    return list.filter(frame => frame.hasMedia).sort((a, b) => a.frameId - b.frameId)[0] || list.find(frame => frame.frameId === 0) || null;
+    const rank = frame => (frame.state === 'ready' ? 4 : 0) + (frame.duration > 300 ? 2 : 0) + (frame.state === 'live' ? 1 : 0);
+    return list.filter(frame => frame.hasMedia).sort((a, b) => rank(b) - rank(a) || (b.duration || 0) - (a.duration || 0) || a.frameId - b.frameId)[0]
+        || list.find(frame => frame.frameId === 0) || null;
 }
 
 async function updateBadge(tabId) {
@@ -117,9 +125,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         chrome.tabs.sendMessage(message.tabId, { type: 'command', command: message.command }, options).catch(() => {});
     } else if (message?.type === 'showCaptions' && sender.tab && typeof message.value === 'boolean') {
         updateSettings({ showCaptions: message.value });
-    } else if (message?.type === 'syncSites') {
-        syncSiteScripts().then(() => reply({ ok: true }), error => reply({ ok: false, error: String(error) }));
-        return true;
     }
     return false;
 });
@@ -144,37 +149,24 @@ chrome.commands.onCommand.addListener(name => {
     if (name === 'toggle-filtering') updateSettings(current => ({ enabled: !current.enabled }));
 });
 
-// ---- Sites the user turned on ----
-// Built-in sites are in the manifest; any other site gets the same scripts once the user grants it.
+// ---- Sites turned on one by one, before 1.0.5 ----
+// The scripts now run on every site, so the ones registered for those sites would run twice. The sites go on the
+// whitelist, for anyone who switches to it.
 
-const isBuiltIn = origin => BUILT_IN.some(pattern => pattern === origin || pattern.replace(/\/\*$/, '') === origin.replace(/\/\*$/, ''));
+async function migrateSites() {
+    const { sitesMigrated } = await chrome.storage.local.get('sitesMigrated');
+    if (sitesMigrated) return;
+    const registered = await chrome.scripting.getRegisteredContentScripts();
+    if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: registered.map(script => script.id) });
 
-async function syncSiteScripts() {
     const { origins = [] } = await chrome.permissions.getAll();
-    const extra = origins.filter(origin => !isBuiltIn(origin) && /^https?:\/\//.test(origin));
-    const registered = (await chrome.scripting.getRegisteredContentScripts()).map(script => script.id);
-    const scripts = [
-        { id: 'cg-sites-page', js: PAGE_SCRIPTS, matches: extra, runAt: 'document_start', allFrames: true, world: 'MAIN' },
-        { id: 'cg-sites-bridge', js: BRIDGE_SCRIPTS, matches: extra, runAt: 'document_start', allFrames: true },
-    ];
-
-    if (extra.length === 0) {
-        const ids = scripts.map(script => script.id).filter(id => registered.includes(id));
-        if (ids.length) await chrome.scripting.unregisterContentScripts({ ids });
-        return;
-    }
-    for (const script of scripts) {
-        if (registered.includes(script.id)) await chrome.scripting.updateContentScripts([script]);
-        else await chrome.scripting.registerContentScripts([script]);
-    }
+    const hosts = origins.filter(origin => /^https?:\/\/[^*]/.test(origin)).map(origin => CG.settings.siteHost(origin.replace(/\/\*$/, ''))).filter(Boolean);
+    if (hosts.length) await updateSettings(current => ({ whitelist: [...current.whitelist, ...hosts] }));
+    await chrome.storage.local.set({ sitesMigrated: true });
 }
 
-chrome.permissions.onAdded.addListener(() => syncSiteScripts().catch(() => {}));
-chrome.permissions.onRemoved.addListener(() => syncSiteScripts().catch(() => {}));
-chrome.runtime.onStartup.addListener(() => syncSiteScripts().catch(() => {}));
-
 chrome.runtime.onInstalled.addListener(details => {
-    syncSiteScripts().catch(() => {});
+    migrateSites().catch(() => {});
     if (details.reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#welcome') });
 
     // The popup says the extension was updated until What's new is seen. Reloading an unpacked copy also arrives as

@@ -1,17 +1,19 @@
 // The toolbar popup: what Cinema Guard is doing on this tab.
 (() => {
     const CG = globalThis.__cinemaGuard;
-    const { el, icon, clock, duration, displayWord, MUTE_LABELS, plural, loadSettings, saveSettings, saveAllowChannels, coverage, untestedSite, reportLink } = CG.ui;
+    const { el, icon, clock, duration, displayWord, MUTE_LABELS, plural, loadSettings, saveSettings, saveAllowChannels, coverage, withSite, untestedSite, reportLink } = CG.ui;
 
     const main = document.getElementById('main');
     const enabledSwitch = document.getElementById('enabled');
     const params = new URLSearchParams(location.search);
+    const openedAt = Date.now();
 
     let tab = null;
     let settings = null;
     let allowChannels = [];
     let cover = { kind: 'unsupported' };
     let frame = null;
+    let framesSeen = false;
     let signature = '';
 
     async function init() {
@@ -19,11 +21,17 @@
             ? await chrome.tabs.get(Number(params.get('tab')))
             : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
         ({ settings, allowChannels } = await loadSettings());
-        cover = await coverage(tab?.url);
+        cover = coverage(tab?.url);
         showSwitch();
         showUpdated();
 
-        if (tab) chrome.runtime.sendMessage({ type: 'command', tabId: tab.id, command: { name: 'repost' } }).catch(() => {});
+        if (tab) {
+            // Changes arrive as they happen; the check every 700 ms is for anything missed.
+            chrome.runtime.connect({ name: `popup:${tab.id}` }).onMessage.addListener(message => {
+                if (message?.type === 'frames') update(message.frames);
+            });
+            chrome.runtime.sendMessage({ type: 'command', tabId: tab.id, command: { name: 'repost' } }).catch(() => {});
+        }
         await refresh();
         setInterval(refresh, 700);
 
@@ -77,10 +85,16 @@
     async function refresh() {
         if (!tab) return render();
         const { frames = [] } = await chrome.runtime.sendMessage({ type: 'getTab', tabId: tab.id }).catch(() => ({}));
-        frame = frames.filter(item => item.hasMedia).sort((a, b) => a.frameId - b.frameId)[0] || frames.find(item => item.frameId === 0) || null;
+        update(frames);
+    }
 
-        const next = JSON.stringify([cover.kind, settings.enabled, settings.showCaptions, settings.pausedSites, allowChannels.length,
-            frame && [frame.key, frame.version, frame.state, frame.filtering, frame.allowed, frame.siteCaptionsHidden, frame.title, frame.hits?.length]]);
+    function update(frames) {
+        frame = mainFrame(frames);
+        framesSeen = frames.length > 0;
+        const waited = Date.now() - openedAt > 1500;
+
+        const next = JSON.stringify([cover.kind, framesSeen, waited, settings.enabled, settings.showCaptions, settings.siteMode, settings.blacklist, settings.whitelist, allowChannels.length,
+            frame && [frame.key, frame.version, frame.state, frame.filtering, frame.pausedForSubtitles, frame.allowed, frame.siteCaptionsHidden, frame.title, frame.hits?.length]]);
         if (next !== signature) {
             signature = next;
             render();
@@ -89,55 +103,74 @@
         }
     }
 
+    // The frame playing the film rather than an advert beside it, as the background worker picks it.
+    function mainFrame(frames) {
+        const rank = item => (item.state === 'ready' ? 4 : 0) + (item.duration > 300 ? 2 : 0) + (item.state === 'live' ? 1 : 0);
+        return frames.filter(item => item.hasMedia).sort((a, b) => rank(b) - rank(a) || (b.duration || 0) - (a.duration || 0) || a.frameId - b.frameId)[0]
+            || frames.find(item => item.frameId === 0) || null;
+    }
+
+    // ---- Where to filter ----
+    // Decided by the tab's site, and by the site of the player when it is embedded from elsewhere.
+
+    const whitelistMode = () => settings.siteMode === 'whitelist';
+    const siteHosts = () => [cover.host, frame?.host].filter(Boolean);
+    const siteOn = () => CG.settings.siteOn(settings, ...siteHosts());
+
+    // Subtitles are read on every site whatever the lists say, so the change works at once, without a reload.
+    function setSiteOn(on) {
+        if (whitelistMode()) return saveSettings(withSite(settings, 'whitelist', cover.host, on));
+        if (!on) return saveSettings(withSite(settings, 'blacklist', cover.host, true));
+        let next = settings;
+        for (const host of siteHosts()) next = withSite(next, 'blacklist', host, false);
+        return saveSettings(next);
+    }
+
     // ---- Pages without a video ----
 
     function notice(title, text, ...buttons) {
         return el('section', { class: 'card notice' }, el('h2', { text: title }), el('p', { class: 'muted', text }), ...buttons);
     }
 
-    async function turnOnSite() {
-        const granted = await chrome.permissions.request({ origins: [`${cover.origin}/*`] });
-        if (!granted) return;
-        await chrome.runtime.sendMessage({ type: 'syncSites' });
-        await chrome.tabs.reload(tab.id);
-        window.close();
-    }
-
-    async function turnOffSite() {
-        await chrome.permissions.remove({ origins: [`${cover.origin}/*`] });
-        await chrome.runtime.sendMessage({ type: 'syncSites' });
-        await chrome.tabs.reload(tab.id);
-        window.close();
-    }
-
     function render() {
         // A video the extension already follows settles it, whatever the address says.
         if (frame?.hasMedia) {
-            main.replaceChildren(mediaCard(), ...hitList(), logSection());
+            main.replaceChildren(...[askToAdd(), mediaCard(), ...hitList(), logSection()].filter(Boolean));
             showActive();
             return;
         }
-        if (cover.kind === 'unsupported') {
+        if (cover.kind !== 'web') {
             main.replaceChildren(notice('Nothing to filter here', 'Cinema Guard works on web pages with videos, such as YouTube.'));
             return;
         }
-        const untested = untestedSite(cover.host);
-        if (cover.kind === 'off' && untested) {
-            main.replaceChildren(notice(`${untested.name} hasn't been tested yet`,
-                `Cinema Guard should work here, but nobody has been able to try it on ${untested.name} yet. You can turn it on and let us know how it went. The page reloads.`,
-                el('div', { class: 'notice-actions' },
-                    el('button', { class: 'button accent', onclick: turnOnSite, text: 'Try it anyway' }),
-                    el('a', { class: 'button', href: reportLink(untested.name), target: '_blank', rel: 'noreferrer', text: 'Report how it went' }))));
+        // Pages open from before Cinema Guard was installed or updated run without it.
+        if (!framesSeen && Date.now() - openedAt > 1500) {
+            main.replaceChildren(notice('Reload this page to start',
+                `Cinema Guard can't see this page yet. It was probably open before Cinema Guard was installed or updated.`,
+                el('button', { class: 'button accent', onclick: () => chrome.tabs.reload(tab.id).then(() => window.close()), text: 'Reload' })));
             return;
         }
-        if (cover.kind === 'off') {
-            main.replaceChildren(notice(`Cinema Guard is off on ${cover.host}`,
-                'Turn it on to mute swearing in videos on this site. The page reloads.',
-                el('button', { class: 'button accent', onclick: turnOnSite, text: `Turn on for ${cover.host}` })));
+        if (!siteOn()) {
+            main.replaceChildren(whitelistMode()
+                ? notice(`Cinema Guard is off on ${cover.host}`,
+                    `${cover.host} is not on your whitelist. Add it and videos here are filtered straight away.`,
+                    el('button', { class: 'button accent', onclick: () => setSiteOn(true), text: `Add ${cover.host} to the whitelist` }))
+                : notice(`Cinema Guard is off on ${cover.host}`,
+                    `${cover.host} is on your blacklist, so nothing is muted here.`,
+                    el('button', { class: 'button accent', onclick: () => setSiteOn(true), text: `Take ${cover.host} off the blacklist` })));
             return;
         }
         main.replaceChildren(notice('No video yet', 'Start a video with captions or subtitles, and Cinema Guard picks it up.',
-            cover.kind === 'granted' ? el('button', { class: 'button', onclick: turnOffSite, text: `Turn off for ${cover.host}` }) : null));
+            el('button', { class: 'button', onclick: () => setSiteOn(false), text: whitelistMode() ? `Remove ${cover.host} from the whitelist` : `Don't filter ${cover.host}` })));
+    }
+
+    // Whitelist mode, on a site not on it: the one question asked. The subtitles are already being read.
+    function askToAdd() {
+        if (!whitelistMode() || siteOn() || !cover.host) return null;
+        return el('section', { class: 'card notice' },
+            el('h2', { text: `Filter videos on ${cover.host}?` }),
+            el('p', { class: 'muted', text: 'It isn\'t on your whitelist, so nothing is muted or blanked here. Add it and this video is filtered straight away.' }),
+            el('button', { class: 'button accent', onclick: () => setSiteOn(true), text: 'Add to the whitelist' }));
     }
 
     // ---- The video ----
@@ -145,7 +178,8 @@
     function status() {
         if (!settings.enabled) return ['caution', 'Off'];
         if (frame.allowed === 'channel') return ['plain', 'Channel not filtered'];
-        if (frame.allowed === 'site') return ['plain', 'Paused on this site'];
+        if (frame.allowed === 'site' || !siteOn()) return ['plain', whitelistMode() ? 'Not on the whitelist' : 'On the blacklist'];
+        if (frame.pausedForSubtitles) return ['caution', 'Paused: other subtitles'];
         return {
             ready: ['success', 'Filtering'],
             live: ['accent', 'Following captions'],
@@ -154,10 +188,16 @@
         }[frame.state] || ['plain', frame.state];
     }
 
-    function mediaCard() {
+    // The status in the card's corner; while a mute plays, it says so there, so nothing below moves.
+    function statusTag() {
+        if (frame.muting) return el('span', { class: 'pill alert', id: 'status' }, icon('speaker'), 'Muting now');
         const [tone, label] = status();
-        const host = frame.host;
-        const paused = settings.pausedSites.includes(host);
+        return el('span', { class: `pill ${tone}`, id: 'status', text: label });
+    }
+
+    function mediaCard() {
+        const host = cover.host || frame.topHost || frame.host;
+        const on = siteOn();
         const channelAllowed = frame.channel && allowChannels.some(channel => channel.id === frame.channel.id);
         const actions = [];
 
@@ -170,11 +210,14 @@
                 text: channelAllowed ? 'Filter this channel again' : 'Don\'t filter this channel',
             }));
         }
-        actions.push(el('button', {
-            class: 'button',
-            onclick: () => saveSettings({ ...settings, pausedSites: paused ? settings.pausedSites.filter(item => item !== host) : [...settings.pausedSites, host] }),
-            text: paused ? `Resume on ${host}` : `Pause on ${host}`,
-        }));
+        // Off on a whitelist, the question above the card has the button.
+        if (!(whitelistMode() && !on)) {
+            actions.push(el('button', {
+                class: 'button',
+                onclick: () => setSiteOn(!on),
+                text: whitelistMode() ? `Remove ${host} from the whitelist` : on ? `Don't filter ${host}` : `Filter ${host} again`,
+            }));
+        }
         if (frame.siteId === 'youtube' && settings.keepCaptionsOn && settings.showCaptions !== null && frame.filtering) {
             actions.push(el('button', {
                 class: 'button',
@@ -193,7 +236,7 @@
                     el('a', { href: reportLink(untested.name), target: '_blank', rel: 'noreferrer', text: 'Report how it went' }))) : null,
             el('div', { class: 'media-head' },
                 el('span', { class: 'site', text: frame.site }),
-                el('span', { class: `pill ${tone}`, text: label })),
+                statusTag()),
             el('div', { class: 'title', text: frame.title || 'Untitled video' }),
             frame.channel?.name ? el('div', { class: 'channel muted', text: frame.channel.name }) : null,
             el('p', { class: 'message muted', text: frame.message }),
@@ -201,7 +244,6 @@
                 el('div', { class: 'stat' }, el('b', { text: (frame.detections ?? 0).toLocaleString() }), el('span', { class: 'muted', text: 'detections' })),
                 el('div', { class: 'stat' }, el('b', { text: (frame.ranges ?? 0).toLocaleString() }), el('span', { class: 'muted', text: 'mutes' })),
                 el('div', { class: 'stat' }, el('b', { text: duration(frame.mutedSeconds || 0) }), el('span', { class: 'muted', text: 'muted in all' }))),
-            el('div', { class: 'muting', id: 'muting', hidden: !frame.muting }, icon('speaker'), 'Muting now'),
             el('div', { class: 'actions' }, actions));
     }
 
@@ -219,7 +261,8 @@
             el('span', { class: 'muted', text: hits.length ? 'Select one to jump to it' : '' }));
 
         if (hits.length === 0) {
-            const text = frame.state === 'loading' ? 'Reading the captions…' : frame.state === 'none' ? 'This video has no captions.' : 'Nothing found so far.';
+            const text = frame.pausedForSubtitles ? 'Nothing to mute in the subtitles on screen. Switch back to your language and the detections return.'
+                : frame.state === 'loading' ? 'Reading the captions…' : frame.state === 'none' ? 'This video has no captions.' : 'Nothing found so far.';
             return [head, el('section', { class: 'card empty muted', text })];
         }
 
@@ -253,7 +296,7 @@
             el('div', { class: 'log-actions' }, copy));
     }
 
-    // The detection playing now, and the muting banner, between full redraws.
+    // The detection playing now, and the status (muting or not), between full redraws.
     function showActive() {
         if (!frame?.hasMedia) return;
         const time = frame.time ?? -1;
@@ -262,8 +305,8 @@
             const hit = hits[Number(row.dataset.index)];
             row.classList.toggle('active', !!hit && !hit.dropped && time >= hit.start && time < (hit.end ?? hit.start + 1));
         }
-        const muting = document.getElementById('muting');
-        if (muting) muting.hidden = !frame.muting;
+        const tag = document.getElementById('status');
+        if (tag && tag.classList.contains('alert') !== !!frame.muting) tag.replaceWith(statusTag());
     }
 
     init();

@@ -128,6 +128,12 @@ kbd {
 .row-list .setting { min-height: 52px; }
 .empty-row { padding: 14px 16px; color: var(--text-secondary); }
 .empty-row + .setting { border-top: 1px solid var(--divider); }
+.setting + .empty-row { border-top: 1px solid var(--divider); }
+
+.choice { justify-content: flex-start; gap: 14px; cursor: pointer; }
+.choice input[type="radio"] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.site-input { width: 220px; }
+.list-kept { margin-top: 8px; }
 
 /* ---- Statistics ---- */
 

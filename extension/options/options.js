@@ -2,7 +2,7 @@
 (() => {
     const CG = globalThis.__cinemaGuard;
     const { catalog, matcher } = CG;
-    const { el, icon, plural, displayWord, loadSettings, saveSettings, saveAllowChannels, UNTESTED_SITES, reportLink } = CG.ui;
+    const { el, icon, plural, displayWord, loadSettings, saveSettings, saveAllowChannels, siteList, withSite, UNTESTED_SITES, reportLink } = CG.ui;
 
     const PAGES = [
         { id: 'filter', title: 'Filter', icon: 'filter', render: filterPage },
@@ -11,10 +11,6 @@
         { id: 'statistics', title: 'Statistics', icon: 'chart', render: statisticsPage },
         { id: 'backup', title: 'Backup', icon: 'archive', render: backupPage },
         { id: 'whats-new', title: 'What\'s new', icon: 'sparkle', render: whatsNewPage },
-    ];
-
-    const BUILT_IN_SITES = [
-        { name: 'YouTube', host: 'youtube.com', note: 'Videos, Shorts, and YouTube videos embedded on other sites' },
     ];
 
     const DESKTOP_APP = 'https://wavebit.dev/software/cinemaguard';
@@ -299,7 +295,10 @@
             ...section('Captions', card(
                 setting('Censor character', 'Replaces each letter of a filtered word in captions on screen: one symbol, or a space to blank it. Leave it empty to leave captions as they are.', censor),
                 setting('Mute words the captions already hide', 'Such as f***, [bleep] and YouTube\'s [ __ ].', switchControl('muteMaskedWords')),
-                setting('Caption language', 'The captions to read when a video has several. The word lists are English, so English suits most people. Used from the next video.', languages))),
+                setting('Caption language', 'The captions to read when a video has several. The word lists are English, so English suits most people. Used from the next video.', languages),
+                setting('Stop muting when the subtitles aren\'t in my language',
+                    'For dubbed sound. When you switch a film\'s subtitles (and its sound) to another language, muting pauses until you switch back. Leave it off to keep muting the original sound whatever subtitles you watch with.',
+                    switchControl('pauseForOtherSubtitles')))),
             ...section('YouTube', card(
                 setting('Keep captions on underneath', 'So swearing can always be caught. The CC button then shows or hides captions instead of turning them off.', switchControl('keepCaptionsOn')),
                 setting('Show captions', 'The same as pressing CC on YouTube.', switchControl('showCaptions')),
@@ -309,47 +308,67 @@
 
     // ---- Sites and channels ----
 
-    async function sitesPage() {
-        const { origins = [] } = await chrome.permissions.getAll();
-        const builtInPatterns = chrome.runtime.getManifest().content_scripts[0].matches;
-        const extra = origins.filter(origin => /^https?:/.test(origin) && !builtInPatterns.includes(origin));
-        const paused = settings.pausedSites;
+    const SITE_MODES = [
+        {
+            mode: 'blacklist', title: 'Everywhere, except blacklisted sites',
+            text: 'Every site with a video is filtered. Put a site on the blacklist to leave it alone.',
+        },
+        {
+            mode: 'whitelist', title: 'Only on whitelisted sites',
+            text: 'Nothing is filtered until you add a site. On a site that isn\'t on it, the toolbar button asks whether to add it.',
+        },
+    ];
 
-        const pauseButton = host => el('button', {
+    function sitesPage() {
+        const mode = siteList(settings);
+        const list = settings[mode];
+        const other = mode === 'whitelist' ? 'blacklist' : 'whitelist';
+
+        const modeRows = SITE_MODES.map(item => el('label', { class: 'setting choice' },
+            el('input', {
+                type: 'radio', name: 'site-mode', value: item.mode, checked: item.mode === mode,
+                onchange: () => save({ ...settings, siteMode: item.mode }, item.mode === 'whitelist' ? 'Filtering whitelisted sites only' : 'Filtering everywhere except the blacklist').then(render),
+            }),
+            el('div', { class: 'setting-text' }, el('div', { text: item.title }), el('div', { class: 'muted', text: item.text }))));
+
+        const input = el('input', { class: 'input site-input', type: 'text', placeholder: 'example.com', 'aria-label': `Site to add to the ${mode}`, spellcheck: 'false' });
+        const add = () => {
+            const host = CG.settings.siteHost(input.value);
+            if (!host) {
+                toast('Type a site such as example.com, or paste its address.');
+                return;
+            }
+            if (CG.settings.listed(list, host)) {
+                toast(`${host} is already on the ${mode}`);
+                return;
+            }
+            save(withSite(settings, mode, host, true), `Added ${host}`).then(render);
+        };
+        input.addEventListener('keydown', event => { if (event.key === 'Enter') add(); });
+
+        const rows = list.map(host => setting(host, null, el('button', {
             class: 'button',
-            onclick: () => save({ ...settings, pausedSites: paused.includes(host) ? paused.filter(item => item !== host) : [...paused, host] }).then(render),
-            text: paused.includes(host) ? 'Resume' : 'Pause',
-        });
-        const pill = host => paused.includes(host) ? el('span', { class: 'pill caution', text: 'Paused' }) : el('span', { class: 'pill success', text: 'On' });
-
-        const extraRows = extra.map(origin => {
-            const host = new URL(origin.replace('/*', '/')).hostname.replace(/^www\./, '');
-            return setting(host, origin.replace('/*', ''), pill(host), pauseButton(host), el('button', {
-                class: 'button',
-                onclick: async () => {
-                    await chrome.permissions.remove({ origins: [origin] });
-                    await chrome.runtime.sendMessage({ type: 'syncSites' });
-                    toast(`Turned off for ${host}`);
-                    render();
-                },
-                text: 'Remove',
-            }));
-        });
-
-        const knownHosts = new Set([...BUILT_IN_SITES.map(site => site.host), ...extra.map(origin => new URL(origin.replace('/*', '/')).hostname.replace(/^www\./, ''))]);
-        const otherPaused = paused.filter(host => !knownHosts.has(host));
+            onclick: () => save({ ...settings, [mode]: list.filter(entry => entry !== host) }, `Removed ${host}`).then(render),
+            text: 'Remove',
+        })));
+        const empty = mode === 'whitelist'
+            ? 'No sites yet, so nothing is filtered. Add one here, or open a video on the site and select Cinema Guard in the toolbar.'
+            : 'No sites: every site is filtered. To leave one alone, add it here, or open a video there, select Cinema Guard in the toolbar and choose Don\'t filter.';
 
         return [
             title('Sites and channels'),
-            intro('Where Cinema Guard filters, and what it leaves alone.'),
-            ...section('Built-in sites', card(...BUILT_IN_SITES.map(site => setting(site.name, `${site.host} · ${site.note}`, pill(site.host), pauseButton(site.host))))),
-            ...section('Other sites you turned on', el('div', { class: 'card row-list' }, extraRows.length ? extraRows
-                : el('div', { class: 'empty-row', text: 'To add a site, open a page with a video there, select Cinema Guard in the toolbar and choose Turn on. Captions or subtitles must be available on the video.' }))),
+            intro('Where Cinema Guard filters, and what it leaves alone. Subtitles are read on every site either way, so a change works straight away, also on a video already playing.'),
+            ...section('Where to filter', card(...modeRows)),
+            ...section(mode === 'whitelist' ? 'Whitelist' : 'Blacklist', el('div', { class: 'card row-list' },
+                el('div', { class: 'setting' }, el('div', { class: 'setting-text' }, el('div', { text: 'Add a site' }),
+                    el('div', { class: 'muted', text: 'A site covers its subdomains too: example.com includes m.example.com.' })),
+                el('div', { class: 'setting-control' }, input, el('button', { class: 'button', onclick: add, text: 'Add' }))),
+                rows.length ? rows : el('div', { class: 'empty-row', text: empty }))),
+            settings[other].length ? el('p', { class: 'muted list-kept', text: `Your ${other} (${plural(settings[other].length, 'site')}) is kept for when you switch back.` }) : null,
             ...section('Help bring Cinema Guard to more sites', el('div', { class: 'card row-list' },
-                el('div', { class: 'empty-row', text: 'Cinema Guard knows how these sites deliver their subtitles, but nobody has been able to test it on them yet: they need a paid account. If you have one, open a video there, select Cinema Guard in the toolbar and choose Try it anyway. Then tell us how it went, and copy the log from the popup into your report. Once a site is confirmed, it becomes built in.' }),
+                el('div', { class: 'empty-row', text: 'Cinema Guard knows how these sites deliver their subtitles, but nobody has been able to test it on them yet: they need a paid account. If you have one, play a video there with Cinema Guard on, then tell us how it went and copy the log from the toolbar popup into your report. Once a site is confirmed, it becomes built in.' }),
                 UNTESTED_SITES.map(site => setting(site.name, site.host, el('span', { class: 'pill caution', text: 'Not tested yet' }),
                     el('a', { class: 'button', href: reportLink(site.name), target: '_blank', rel: 'noreferrer', text: 'Report how it went' }))))),
-            otherPaused.length ? section('Other paused sites', card(...otherPaused.map(host => setting(host, null, pauseButton(host))))) : null,
             ...section('Channels that are not filtered', el('div', { class: 'card row-list' }, allowChannels.length
                 ? allowChannels.map(channel => setting(channel.name || channel.id, channel.site || 'YouTube', el('button', {
                     class: 'button',

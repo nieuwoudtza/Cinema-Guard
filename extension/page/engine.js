@@ -9,6 +9,16 @@
     const adapter = sites.pick();
     const host = location.hostname.replace(/^www\./, '');
 
+    // The site of the tab. A player embedded from another site (most film sites) is filtered as the tab's site says.
+    const topHost = (() => {
+        try {
+            const origins = location.ancestorOrigins;
+            const top = origins?.length ? origins[origins.length - 1] : null;
+            if (top && top !== 'null') return new URL(top).hostname.replace(/^www\./, '');
+        } catch { /* not known */ }
+        return host;
+    })();
+
     let settings = null;
     let allowChannels = [];
     let lists = { full: [], single: [], all: [], pads: {}, mask: '', maskedWords: true };
@@ -77,6 +87,7 @@
         }
         if (name === 'repost') {
             postedVersion = -1;
+            idlePosted = '';
             post();
         }
         if (name === 'showSiteCaptions') {
@@ -89,12 +100,13 @@
 
     function allowedReason(current) {
         if (!settings) return null;
-        if (settings.pausedSites.includes(host)) return 'site';
+        if (!S.siteOn(settings, topHost, host)) return 'site';
         if (current?.channel && allowChannels.some(channel => channel.id === current.channel.id)) return 'channel';
         return null;
     }
 
-    const filtering = () => !!settings && settings.enabled && !session?.allowed && !settings.pausedSites.includes(host);
+    // Subtitles are read whatever the lists say; this decides only whether to mute and blank.
+    const filtering = () => !!settings && settings.enabled && !session?.allowed && S.siteOn(settings, topHost, host);
 
     // ---- Sessions: one per video ----
 
@@ -118,6 +130,13 @@
         if (!settings) return;
         let key = null;
         try { key = adapter.mediaKey(); } catch { /* the player is not ready */ }
+
+        // Most pages have no video: nothing more runs on them until one turns up.
+        if (!key && !session && !safe(() => adapter.video(), null)) {
+            post();
+            return;
+        }
+        run();
 
         if (key && key !== session?.key) startSession(key);
         observeCaptions();
@@ -149,6 +168,7 @@
             state: 'loading', message: 'Looking for captions…', log: [],
             sources: new Map(), trackCounts: new Map(), hits: [], liveHits: [], ranges: [], counted: new Set(),
             offset: 0, alignment: [], alignSeen: new Set(),
+            foreign: new Map(), shown: null, // subtitles in other languages, and which language is on screen
         };
         session.allowed = allowedReason(session);
         const current = session;
@@ -164,7 +184,10 @@
             .catch(error => note(current, `Loading captions failed: ${error.message}`))
             .finally(() => {
                 if (isCurrent(current) && current.state === 'loading') {
-                    setState(current, 'live', 'No caption file yet: muting follows the captions on screen');
+                    // Most film players download subtitles only once a language is chosen in them.
+                    setState(current, 'live', adapter.id === 'youtube'
+                        ? 'No caption file yet: muting follows the captions on screen'
+                        : 'No subtitles yet. Turn on subtitles in the player, in your caption language, so Cinema Guard can read them; until then it follows any captions on screen');
                 }
             });
     }
@@ -189,20 +212,115 @@
     }
 
     function addDownload(current, capture) {
+        // Segments of one track share their folder; a whole file is its own source.
+        const url = new URL(capture.url, location.href);
+        const folder = url.origin + url.pathname.replace(/[^/]*$/, '');
+        const id = capture.format === 'vtt' && /seg|\d+\.vtt$/i.test(url.pathname) ? `dl:${folder}` : `dl:${url.origin}${url.pathname}`;
+
         const languages = settings.languages;
         if (capture.language && !languages.some(language => capture.language.toLowerCase().startsWith(language))) {
+            keepForeign(current, id, capture.cues);
             if (!current.skippedLanguages?.has(capture.language)) {
                 (current.skippedLanguages ??= new Set()).add(capture.language);
                 note(current, `Skipped a ${capture.language} subtitle file (not one of your caption languages)`);
             }
             return;
         }
-        // Segments of one track share their folder; a whole file is its own source.
-        const url = new URL(capture.url, location.href);
-        const folder = url.origin + url.pathname.replace(/[^/]*$/, '');
-        const id = capture.format === 'vtt' && /seg|\d+\.vtt$/i.test(url.pathname) ? `dl:${folder}` : `dl:${url.origin}${url.pathname}`;
+        // A file that doesn't say its language is looked at: one in another language is skipped, so the player's
+        // first pick (often Arabic or Spanish) doesn't stand in for the English the viewer switches to.
+        if (!capture.language && otherLanguage(capture.cues)) {
+            keepForeign(current, id, capture.cues);
+            skippedLanguage(current, 'subtitle file');
+            return;
+        }
         const name = `Subtitles (${capture.format}${capture.language ? `, ${capture.language}` : ''})`;
         addSource(current, { id, name, via: 'Downloaded by the player', cues: capture.cues, alignable: adapter.alignToScreen });
+    }
+
+    // Caption languages written in the Latin alphabet; a file mostly in another one is not in them.
+    const LATIN_LANGUAGES = new Set(['af', 'da', 'nl', 'en', 'fi', 'fr', 'de', 'id', 'it', 'no', 'pl', 'pt', 'es', 'sv', 'tr', 'vi', 'xh', 'zu']);
+
+    // Words found all through English dialogue and seldom in other languages (so not "a", "no" or "me"). English
+    // subtitles are about a quarter these words; Spanish, French or German ones hardly any.
+    const COMMON_WORDS = {
+        en: new Set(['the', 'you', 'to', 'and', 'it', 'is', 'that', 'what', 'of', 'this', 'we', 'my', 'your', "don't", "i'm", "it's",
+            "you're", 'have', 'are', 'not', 'for', 'just', 'know', 'he', 'she', 'with', 'get', 'all', 'there', 'can', 'like', 'out',
+            'they', 'him', 'her', 'if', 'how', 'right', 'okay', 'yes', 'want', 'got', 'think', 'well', 'now', 'about', 'gonna', 'did']),
+    };
+
+    // Whether subtitles are in none of the viewer's caption languages. Only said when it is clear.
+    function otherLanguage(cues) {
+        const sample = cues.slice(0, 120).map(cue => cue.text.replace(/<[^>]*>/g, '')).join(' ').replace(/[‘’]/g, "'");
+        const letters = sample.match(/\p{L}/gu)?.length || 0;
+        if (letters < 50) return false;
+        if (settings.languages.every(language => LATIN_LANGUAGES.has(language))) {
+            const latin = sample.match(/\p{Script=Latin}/gu)?.length || 0;
+            if (latin / letters < 0.3) return true;
+        }
+        const lists = settings.languages.map(language => COMMON_WORDS[language]);
+        if (lists.some(list => !list)) return false; // a language without a word list: no way to tell
+        const words = sample.toLowerCase().match(/\p{L}+(?:'\p{L}+)?/gu) || [];
+        if (words.length < 60) return false;
+        const common = words.filter(word => lists.some(list => list.has(word))).length;
+        return common / words.length < 0.08;
+    }
+
+    // Subtitles in other languages are kept aside (not used for muting), to tell which language is on screen.
+    function keepForeign(current, id, cues) {
+        const existing = current.foreign.get(id);
+        const all = existing ? existing.concat(cues) : [...cues];
+        current.foreign.set(id, all.sort((a, b) => a.start - b.start));
+    }
+
+    // ---- Subtitles on screen in another language ----
+    // With the setting on, muting pauses while the player shows subtitles in another language (for a dub, where the
+    // sound changes too). Told from the player's showing text track, or from which file the text on screen comes from.
+
+    const pausedForSubtitles = () => !!settings?.pauseForOtherSubtitles && session?.shown === 'other';
+
+    function setShown(current, shown) {
+        if (!shown || current.shown === shown) return;
+        const before = current.shown;
+        current.shown = shown;
+        current.version++;
+        if (before || shown === 'other') {
+            const on = settings.pauseForOtherSubtitles;
+            note(current, shown === 'other'
+                ? `The subtitles on screen are in another language, so ${on ? 'muting is paused' : 'muting carries on: the setting to stop muting for other subtitles is off'}`
+                : `The subtitles on screen are in your language again${on ? ', so muting is back on' : ''}`);
+        }
+        drawMarkers(true);
+        tick();
+        post();
+    }
+
+    // Text on screen is a subtitle line when it is a fair part of one (a line the player splits in two), or the line
+    // with little more around it. Names shared by both languages ("Staten Island", "Spider-Man") match neither way: a
+    // short line is not found inside a longer text, and a text that matches both languages decides nothing.
+    const partOf = (key, line) => (key.length >= 8 && line.includes(key)) || (line.length >= 8 && key.includes(line) && line.length >= key.length * 0.6);
+
+    function watchShownLanguage(texts) {
+        if (!session?.sources.size || !session.foreign.size) return;
+        const keys = texts.map(text => text && lineKey(text)).filter(key => key && key.length >= 8);
+        if (keys.length === 0) return;
+        const ours = spokenKeys();
+        const foreign = keysAt([...session.foreign.values()].map(cues => ({ cues, offset: 0 })));
+        let votesOurs = 0;
+        let votesOther = 0;
+        for (const key of keys) {
+            const inOurs = ours.some(line => partOf(key, line));
+            const inOther = foreign.some(line => partOf(key, line));
+            if (inOurs && !inOther) votesOurs++;
+            if (inOther && !inOurs) votesOther++;
+        }
+        if (votesOurs > votesOther) setShown(session, 'ours');
+        else if (votesOther > votesOurs) setShown(session, 'other');
+    }
+
+    function skippedLanguage(current, what) {
+        if (current.skippedOther) return;
+        current.skippedOther = true;
+        note(current, `Skipped a ${what} in another language than your caption languages; it is read once you choose one of yours in the player`);
     }
 
     hooks.listen(capture => {
@@ -240,105 +358,362 @@
         const tracks = [...video.textTracks].filter(track => track.kind === 'subtitles' || track.kind === 'captions');
         if (tracks.length === 0) return;
 
-        const languages = settings.languages;
-        const preferred = tracks.filter(track => languages.some(language => (track.language || '').toLowerCase().startsWith(language)));
+        const preferred = tracks.filter(trackInLanguage);
         const usable = preferred.length ? preferred : tracks;
-        // A track that is off has no cues loaded; one is turned on out of sight.
-        if (usable.every(track => track.mode === 'disabled') && tracks.every(track => track.mode === 'disabled')) {
+        // A track that is off has no cues loaded; one is turned on out of sight. Once only: a player that turns it off
+        // again (it loads its subtitles itself) is left to it.
+        current.tracksTurnedOn ??= new WeakSet();
+        if (tracks.every(track => track.mode === 'disabled') && !current.tracksTurnedOn.has(usable[0])) {
+            current.tracksTurnedOn.add(usable[0]);
             usable[0].mode = 'hidden';
             note(current, `Turned on the "${usable[0].label || usable[0].language || 'subtitles'}" text track out of sight so it can be read`);
         }
 
         tracks.forEach((track, index) => {
             if (track.mode === 'disabled' || !track.cues?.length) return;
-            if (track.mode === 'showing') maskCues(track);
+            // Players load several languages: only the viewer's are read, when the video has them.
+            const inLanguage = !preferred.length || preferred.includes(track);
+            if (inLanguage) {
+                // Hidden tracks too: many players draw their captions themselves from the track's cues.
+                maskCues(track);
+                if (!watchedTracks.has(track)) {
+                    watchedTracks.add(track);
+                    // Cues an HLS player adds are blanked as they come on screen, without waiting for the next check.
+                    track.addEventListener('cuechange', () => { if (track.mode !== 'disabled') maskCues(track, track.activeCues); });
+                }
+            }
             const id = `track:${index}:${track.language}:${track.label}`;
-            if (current.trackCounts.get(id) === track.cues.length) return;
-            current.trackCounts.set(id, track.cues.length);
+            // Read again when the lines change: more of them, or another language loaded into the same track.
+            const signature = `${track.cues.length}|${cueOriginals.get(track.cues[0]) ?? track.cues[0].text}|${cueOriginals.get(track.cues[track.cues.length - 1]) ?? track.cues[track.cues.length - 1].text}`;
+            if (current.trackCounts.get(id) === signature) return;
+            current.trackCounts.set(id, signature);
             const cues = [...track.cues].map(cue => ({ start: cue.startTime, end: cue.endTime, text: cueOriginals.get(cue) ?? cue.text ?? '', words: null }));
+            // A track in another language is set aside, also one labelled with the viewer's language whose lines plainly
+            // aren't (some players load the language chosen into the one track they have).
+            if (!inLanguage || otherLanguage(cues)) {
+                current.foreign.set(id, cues);
+                if (current.sources.delete(id)) scheduleRecompute(current);
+                if (inLanguage) skippedLanguage(current, 'subtitle track');
+                return;
+            }
+            current.foreign.delete(id);
             addSource(current, { id, name: track.label || track.language || 'Subtitles', via: 'Text track', cues, replace: true, alignable: false });
         });
+
+        // Which language the player has on: the tracks it has turned on, when that changes (cinesrc loads the language
+        // chosen into its one track; others turn another track on). A track the browser draws itself is on screen too.
+        const idOf = track => `track:${tracks.indexOf(track)}:${track.language}:${track.label}`;
+        const on = tracks.filter(track => track.mode !== 'disabled' && track.cues?.length);
+        const onSignature = on.map(idOf).join('|');
+        const showing = on.filter(track => track.mode === 'showing');
+        if (onSignature !== current.tracksOn) {
+            const first = current.tracksOn === undefined;
+            current.tracksOn = onSignature;
+            const ours = on.some(track => current.sources.has(idOf(track)));
+            const foreign = on.filter(track => current.foreign.has(idOf(track)));
+            if (!first && !ours && foreign.length) note(current, `The player switched its subtitles to ${foreign[0].label || foreign[0].language || 'another language'}`);
+            // A change of the tracks turned on says what the player shows; with every track kept on, it says nothing.
+            if (!first && !(tracks.length > 1 && on.length === tracks.length)) {
+                if (ours) setShown(current, 'ours');
+                else if (foreign.length) setShown(current, 'other');
+            }
+        }
+        if (showing.length) setShown(current, showing.some(track => current.sources.has(idOf(track))) ? 'ours' : 'other');
     }
 
-    function maskCues(track) {
+    // Whether a text track is in one of the viewer's caption languages, by its code or by its label (players often
+    // give made-up codes such as x2 with a label that says English).
+    const languageNames = new Map();
+    function languageName(code) {
+        if (!languageNames.has(code)) {
+            let name = '';
+            try { name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || ''; } catch { /* not a code */ }
+            languageNames.set(code, name.toLowerCase());
+        }
+        return languageNames.get(code);
+    }
+
+    // The viewer's first caption language by name, for messages ("English").
+    function languageLabel() {
+        const name = languageName(settings.languages[0] || 'en');
+        return name ? name[0].toUpperCase() + name.slice(1) : settings.languages[0];
+    }
+
+    function trackInLanguage(track) {
+        const code = (track.language || '').toLowerCase();
+        const label = (track.label || '').toLowerCase();
+        return settings.languages.some(language => code.startsWith(language) || (languageName(language) && label.includes(languageName(language))));
+    }
+
+    const watchedTracks = new WeakSet();
+    const cueMasks = new WeakMap(); // cue -> { text, version }: what it was last set to, under which settings
+    let maskVersion = 0;
+
+    function maskCues(track, cues = track.cues) {
         const blank = filtering() && lists.mask;
-        for (const cue of track.cues || []) {
+        const version = `${maskVersion}|${!!blank}`;
+        for (const cue of cues || []) {
             if (typeof cue.text !== 'string') continue;
+            const done = cueMasks.get(cue);
+            if (done && done.version === version && done.text === cue.text) continue;
             const original = cueOriginals.get(cue) ?? cue.text;
             cueOriginals.set(cue, original);
             const wanted = blank ? matcher.maskText(original, lists.all, lists.mask) : original;
             if (cue.text !== wanted) cue.text = wanted;
+            cueMasks.set(cue, { text: wanted, version });
         }
     }
 
     // ---- Captions on screen ----
+    // Captions on screen are found three ways: the player's own caption elements (known to the adapter), elements
+    // named like captions that lie over the video, and, once there is a subtitle file, any text on the page that is
+    // part of the line being spoken, whatever draws it. Only what changes is looked at, so busy pages stay quick.
 
     const CAPTION_HINT = /click for settings/i;
+    const OBSERVE = { childList: true, subtree: true, characterData: true };
+    const LOOSE_LIMIT = 400;
     const textOriginals = new WeakMap(); // text node -> { original, masked }
     const maskedNodes = new Set();       // WeakRefs to blanked text nodes, to put back when filtering stops
+    const containers = new Set();        // caption elements on the page now
+    const plausibleElements = new WeakSet();
     let observer = null;
     let observedRoot = null;
+    let observedShadows = new WeakSet();
+    let pending = [];                    // changes waiting for the next scan
+    let relook = [];                     // text put back, to blank again with new settings
     let scanQueued = false;
+
+    const captionSelector = () => adapter.likelyCaptions ? `${adapter.captionSelector}, ${adapter.likelyCaptions}` : adapter.captionSelector;
 
     function observeCaptions() {
         const root = safe(() => adapter.observeRoot(), null);
-        if (!root || root === observedRoot) return;
-        observer?.disconnect();
-        observedRoot = root;
-        observer = new MutationObserver(queueScan);
-        observer.observe(root, { childList: true, subtree: true, characterData: true });
+        if (root && root !== observedRoot) {
+            observer?.disconnect();
+            containers.clear();
+            observedShadows = new WeakSet();
+            observedRoot = root;
+            observer = new MutationObserver(records => {
+                pending.push(...records);
+                queueScan();
+            });
+            observer.observe(root, OBSERVE);
+            discover(root);
+        }
+        if (observer && adapter.likelyCaptions) {
+            for (const shadow of hooks.shadowRoots()) {
+                if (observedShadows.has(shadow)) continue;
+                observedShadows.add(shadow);
+                observer.observe(shadow, OBSERVE);
+                discover(shadow);
+            }
+        }
+    }
+
+    function discover(root) {
+        for (const element of root.querySelectorAll(captionSelector())) {
+            const container = containerOf(element);
+            if (container) addContainer(container);
+        }
         queueScan();
     }
 
     function queueScan() {
         if (scanQueued) return;
         scanQueued = true;
+        // Before the next paint, so a word is never drawn before it is blanked.
         queueMicrotask(() => {
             scanQueued = false;
             scanCaptions();
         });
     }
 
+    // Whether an element is captions. The player's own caption elements are; one only named like captions must lie
+    // over the video (or just below it) and hold nothing but text, so headings, buttons and menus are left alone.
+    function plausible(element) {
+        if (plausibleElements.has(element)) return true;
+        if (element.matches(adapter.captionSelector)) {
+            plausibleElements.add(element);
+            return true;
+        }
+        if (!adapter.likelyCaptions || /^(H[1-6]|BUTTON|A|LABEL|svg|SVG|path|use|TITLE|OPTION)$/.test(element.tagName)) return false;
+        if (element.closest('button, a[href], label, [role="button"], [role="menu"], [role="menuitem"], [role="dialog"], [role="listbox"], [role="slider"]')) return false;
+        if (element.querySelector('video, audio, iframe, button, input, select, textarea, a[href], img, svg, canvas')) return false;
+        if ((element.textContent || '').length > 400) return false;
+
+        const video = adapter.video();
+        if (!video) return false;
+        const box = element.getBoundingClientRect();
+        const area = video.getBoundingClientRect();
+        if (box.width === 0 && box.height === 0) return false; // empty or hidden for now: looked at again when it changes
+        const over = box.right > area.left && box.left < area.right && box.bottom > area.top && box.top < area.bottom + area.height * 0.25;
+        if (over) plausibleElements.add(element);
+        return over;
+    }
+
+    // The outermost caption element around a node, or null.
+    function containerOf(element) {
+        const selector = captionSelector();
+        let found = null;
+        for (let current = element?.closest?.(selector); current; current = current.parentElement?.closest(selector)) {
+            if (plausible(current)) found = current;
+        }
+        return found;
+    }
+
+    function addContainer(container) {
+        if (containers.has(container)) return;
+        for (const other of containers) {
+            if (other.contains(container)) return;
+            if (container.contains(other)) containers.delete(other);
+        }
+        containers.add(container);
+    }
+
     function rescanCaptions() {
         // Put every blanked word back, then blank again with the current settings.
+        maskVersion++;
         for (const ref of maskedNodes) {
             const node = ref.deref();
             const known = node && textOriginals.get(node);
-            if (known && node.nodeValue === known.masked) node.nodeValue = known.original;
+            if (known && node.nodeValue === known.masked) {
+                node.nodeValue = known.original;
+                relook.push(node);
+            }
             maskedNodes.delete(ref);
         }
         if (adapter.readsTextTracks) {
-            for (const track of adapter.video()?.textTracks || []) if (track.mode === 'showing') maskCues(track);
+            for (const track of adapter.video()?.textTracks || []) if (track.mode !== 'disabled') maskCues(track);
         }
         queueScan();
     }
 
-    function scanCaptions() {
-        if (!observedRoot || !settings) return;
-        const blank = filtering() && lists.mask;
-        const lines = [];
+    // Blanks listed words in one text node, remembering what it said. Returns what it says unblanked.
+    function maskNode(node, blank) {
+        const current = node.nodeValue;
+        const known = textOriginals.get(node);
+        const original = known && known.masked === current ? known.original : current;
+        const wanted = blank ? matcher.maskText(original, lists.all, lists.mask) : original;
+        if (wanted !== current) {
+            node.nodeValue = wanted;
+            if (wanted !== original) {
+                textOriginals.set(node, { original, masked: wanted });
+                maskedNodes.add(new WeakRef(node));
+            }
+        }
+        return original;
+    }
 
-        for (const container of observedRoot.querySelectorAll(adapter.captionSelector)) {
-            if (container.parentElement?.closest(adapter.captionSelector)) continue;
-            const parts = [];
-            const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-                const current = node.nodeValue;
-                const known = textOriginals.get(node);
-                const original = known && known.masked === current ? known.original : current;
-                parts.push(original);
+    // Text nodes that changed, and caption elements among them.
+    function sortChanges(records, loose) {
+        const selector = captionSelector();
+        const take = node => { if (loose.length < LOOSE_LIMIT) loose.push(node); };
 
-                const wanted = blank ? matcher.maskText(original, lists.all, lists.mask) : original;
-                if (wanted !== current) {
-                    node.nodeValue = wanted;
-                    if (wanted !== original) {
-                        textOriginals.set(node, { original, masked: wanted });
-                        maskedNodes.add(new WeakRef(node));
+        for (const record of records) {
+            const target = record.target;
+            const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+            const container = element && containerOf(element);
+            if (container) {
+                addContainer(container);
+                continue;
+            }
+            if (record.type === 'characterData') {
+                take(target);
+                continue;
+            }
+            for (const added of record.addedNodes) {
+                if (added.nodeType === Node.TEXT_NODE) {
+                    take(added);
+                } else if (added.nodeType === Node.ELEMENT_NODE) {
+                    let found = false;
+                    for (const candidate of [added, ...added.querySelectorAll(selector)]) {
+                        if (candidate !== added || added.matches(selector)) {
+                            const inner = containerOf(candidate);
+                            if (inner) {
+                                addContainer(inner);
+                                found = true;
+                            }
+                        }
+                    }
+                    if (!found && adapter.matchesCueText && loose.length < LOOSE_LIMIT) {
+                        const walker = document.createTreeWalker(added, NodeFilter.SHOW_TEXT);
+                        for (let node = walker.nextNode(); node && loose.length < LOOSE_LIMIT; node = walker.nextNode()) loose.push(node);
                     }
                 }
             }
+        }
+    }
+
+    // The lines being spoken now (and just before and after), as letters only, from the subtitle files.
+    const cueKeys = new WeakMap();
+    const spokenKeys = () => session
+        ? keysAt([...session.sources.values()].map(source => ({ cues: source.cues, offset: source.alignable ? session.offset : 0 })))
+        : [];
+
+    // The lines of these cue lists ({ cues, offset }) due now, give or take two seconds.
+    function keysAt(lists) {
+        const time = adapter.video()?.currentTime;
+        if (!session || !Number.isFinite(time)) return [];
+        const keys = [];
+        for (const { cues, offset } of lists) {
+            for (const cue of cues) {
+                if (cue.start + offset > time + 2) break;
+                if (cue.end + offset < time - 2) continue;
+                let key = cueKeys.get(cue);
+                if (key === undefined) cueKeys.set(cue, key = lineKey(cue.text));
+                if (key) keys.push(key);
+            }
+        }
+        return keys;
+    }
+
+    // Text outside any caption element is blanked when it is part of the line being spoken: captions drawn by a
+    // player nobody knows the names of.
+    function maskLoose(nodes, blank) {
+        if (!adapter.matchesCueText || !session?.sources.size) return;
+        const keys = blank ? spokenKeys() : [];
+        for (const node of nodes) {
+            if (node.nodeType !== Node.TEXT_NODE || !node.isConnected) continue;
+            const known = textOriginals.get(node);
+            if (!blank) {
+                if (known) maskNode(node, false);
+                continue;
+            }
+            if (keys.length === 0) return;
+            const parent = node.parentElement;
+            if (!parent || /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|TITLE|OPTION)$/.test(parent.tagName) || parent.isContentEditable) continue;
+            const original = known && known.masked === node.nodeValue ? known.original : node.nodeValue;
+            if (!original || original.length > 400 || matcher.find(original, lists.all).length === 0) continue;
+            const key = lineKey(original);
+            if (key.length >= 2 && keys.some(spoken => spoken.includes(key))) maskNode(node, blank);
+        }
+    }
+
+    function scanCaptions() {
+        const records = pending;
+        const again = relook;
+        pending = [];
+        relook = [];
+        if (!observedRoot || !settings) return;
+        const blank = filtering() && lists.mask;
+        const loose = [...again];
+        sortChanges(records, loose);
+
+        const lines = [];
+        for (const container of containers) {
+            if (!container.isConnected) {
+                containers.delete(container);
+                continue;
+            }
+            const parts = [];
+            const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(maskNode(node, blank));
             const line = parts.join(' ').replace(/\s+/g, ' ').trim();
             if (line && !CAPTION_HINT.test(line)) lines.push(line);
+        }
+        maskLoose(loose, blank);
+        if (settings.pauseForOtherSubtitles) {
+            const original = node => { const known = textOriginals.get(node); return known && known.masked === node.nodeValue ? known.original : node.nodeValue; };
+            watchShownLanguage([...lines, ...loose.filter(node => node.nodeType === Node.TEXT_NODE && node.isConnected).map(original)]);
         }
 
         if (session && filtering()) {
@@ -442,7 +817,7 @@
 
     // 'now' inside a mute, 'soon' within the fade before one, otherwise false.
     function shouldMute(video) {
-        if (!session || !filtering() || safe(() => adapter.isAd(), false)) return false;
+        if (!session || !filtering() || pausedForSubtitles() || safe(() => adapter.isAd(), false)) return false;
         const time = video.currentTime;
         if (H.rangeAt(session.ranges, time)) return 'now';
         if (liveActive() && (live.hold || time < live.until)) return 'now';
@@ -489,7 +864,7 @@
                 video.volume = fade.base;
             });
         }
-        post();
+        post(true);
     }
 
     function unmuteVideo(video) {
@@ -506,7 +881,7 @@
         } else {
             video.volume = base;
         }
-        post();
+        post(true);
     }
 
     // The checks every frame and every 50 ms can come too late for a 30 ms fade, so a timer is set for the moment the
@@ -569,7 +944,7 @@
     }
 
     function count(hit) {
-        if (!session || session.counted.has(countKey(hit)) || !filtering()) return;
+        if (!session || session.counted.has(countKey(hit)) || !filtering() || pausedForSubtitles()) return;
         session.counted.add(countKey(hit));
         toBridge('muted', { word: hit.word, site: adapter.name, key: session.key, title: session.title, url: location.href });
     }
@@ -579,7 +954,7 @@
     let markerSignature = '';
 
     function drawMarkers(force) {
-        const bar = settings?.markers && filtering() && session ? safe(() => adapter.markers(), null) : null;
+        const bar = settings?.markers && filtering() && !pausedForSubtitles() && session ? safe(() => adapter.markers(), null) : null;
         const duration = adapter.video()?.duration;
         const layer = document.querySelector('.cg-markers');
 
@@ -613,40 +988,61 @@
     let postTimer = null;
     let postedVersion = -1;
     let lastFullPost = 0;
+    let idlePosted = '';
 
-    function post() {
+    // Changes are gathered for a quarter of a second; a mute starting or ending goes at once, so the popup keeps up.
+    function post(now = false) {
+        if (now) {
+            clearTimeout(postTimer);
+            postTimer = null;
+            sendState();
+            return;
+        }
         if (postTimer) return;
         postTimer = setTimeout(() => {
             postTimer = null;
-            const video = adapter.video();
-            if (!session) {
-                toBridge('state', { hasMedia: false, site: adapter.name, siteId: adapter.id, host, filtering: filtering() });
-                return;
-            }
-
-            const state = {
-                hasMedia: true, site: adapter.name, siteId: adapter.id, host, key: session.key, url: location.href,
-                title: session.title, channel: session.channel, allowed: session.allowed,
-                state: session.state, message: session.message, filtering: filtering(), muting: mutedByUs,
-                time: video?.currentTime ?? null, duration: Number.isFinite(video?.duration) ? video.duration : null,
-                ranges: session.ranges.length, mutedSeconds: session.ranges.reduce((sum, range) => sum + range.end - range.start, 0),
-                siteCaptionsHidden: document.documentElement.classList.contains('cg-hide-site-captions'),
-                version: session.version,
-            };
-
-            // The detections and log only go when they changed, and now and then in case the popup missed them.
-            if (session.version !== postedVersion || Date.now() - lastFullPost > 10000) {
-                postedVersion = session.version;
-                lastFullPost = Date.now();
-                const all = [...session.hits, ...session.liveHits].sort((a, b) => a.at - b.at);
-                state.detections = all.filter(hit => !hit.dropped).length;
-                state.hits = all.slice(0, 600).map(compactHit);
-                state.sources = [...session.sources.values()].map(source => ({ name: source.name, via: source.via, lines: source.cues.length }));
-                state.log = session.log.slice(-100);
-                state.offset = session.offset;
-            }
-            toBridge('state', state);
+            sendState();
         }, 250);
+    }
+
+    function sendState() {
+        const video = adapter.video();
+        if (!session) {
+            // Without a video only changes go, so the many pages and frames with none stay quiet.
+            const idle = JSON.stringify({ hasMedia: false, site: adapter.name, siteId: adapter.id, host, topHost, filtering: filtering() });
+            if (idle !== idlePosted) toBridge('state', JSON.parse(idlePosted = idle));
+            return;
+        }
+
+        // Subtitles in another language on screen (with the setting for dubbed sound): the detections are those of
+        // these subtitles, so none. The file in the viewer's language is kept for when they switch back.
+        const otherSubtitles = pausedForSubtitles();
+        const ranges = otherSubtitles ? [] : session.ranges;
+        const state = {
+            hasMedia: true, site: adapter.name, siteId: adapter.id, host, topHost, key: session.key, url: location.href,
+            title: session.title, channel: session.channel, allowed: session.allowed,
+            state: session.state, filtering: filtering(), muting: mutedByUs, pausedForSubtitles: otherSubtitles,
+            message: otherSubtitles
+                ? `The subtitles on screen are in another language, so nothing is muted. Switch back to ${languageLabel()} subtitles to filter again.`
+                : session.message,
+            time: video?.currentTime ?? null, duration: Number.isFinite(video?.duration) ? video.duration : null,
+            ranges: ranges.length, mutedSeconds: ranges.reduce((sum, range) => sum + range.end - range.start, 0),
+            siteCaptionsHidden: document.documentElement.classList.contains('cg-hide-site-captions'),
+            version: session.version,
+        };
+
+        // The detections and log only go when they changed, and now and then in case the popup missed them.
+        if (session.version !== postedVersion || Date.now() - lastFullPost > 10000) {
+            postedVersion = session.version;
+            lastFullPost = Date.now();
+            const all = otherSubtitles ? [] : [...session.hits, ...session.liveHits].sort((a, b) => a.at - b.at);
+            state.detections = all.filter(hit => !hit.dropped).length;
+            state.hits = all.slice(0, 600).map(compactHit);
+            state.sources = [...session.sources.values()].map(source => ({ name: source.name, via: source.via, lines: source.cues.length }));
+            state.log = session.log.slice(-100);
+            state.offset = session.offset;
+        }
+        toBridge('state', state);
     }
 
     // A detection for the popup: the caption line is cut down to the words around the match.
@@ -695,8 +1091,24 @@
         }
     }
 
+    // The scripts run on every page, so at first they only watch for a video.
     function start() {
         started = true;
+        for (const type of ['loadedmetadata', 'loadstart', 'durationchange', 'play'])
+            document.addEventListener(type, checkMedia, true);
+        document.addEventListener('yt-navigate-finish', checkMedia);
+        setInterval(checkMedia, 1000);
+        checkMedia();
+
+        window.addEventListener('pagehide', release);
+    }
+
+    // The rest starts with the first video.
+    let running = false;
+
+    function run() {
+        if (running) return;
+        running = true;
         addStyles();
 
         // Timers alone run late, so the time is also checked every frame and on every playback event.
@@ -706,14 +1118,6 @@
         for (const type of ['timeupdate', 'seeked', 'play', 'playing', 'pause', 'ratechange', 'volumechange'])
             document.addEventListener(type, tick, true);
         document.addEventListener('seeking', () => { resetLive(); tick(); }, true);
-
-        for (const type of ['loadedmetadata', 'loadstart', 'durationchange'])
-            document.addEventListener(type, checkMedia, true);
-        document.addEventListener('yt-navigate-finish', checkMedia);
-        setInterval(checkMedia, 1000);
-        checkMedia();
-
-        window.addEventListener('pagehide', release);
     }
 
     const api = {

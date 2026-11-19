@@ -6,6 +6,19 @@ list under What's new, and the popup points to it after an update.
 Each version is a `## <version> — <date>` heading followed by one `- ` line per change. Add changes under
 `## Unreleased`; `publish-extension.ps1` turns that heading into the version it packs.
 
+## 1.0.5 — 19 November 2026
+
+- Choose where Cinema Guard filters, under Sites and channels: everywhere except the sites on your blacklist (the default), or only the sites on your whitelist. Sites paused before are on the blacklist, and sites you had turned on one by one are on the whitelist.
+- No more turning sites on one by one: Cinema Guard runs on every site and always reads the subtitles, so adding a site to the whitelist or taking it off the blacklist works at once, also on a video already playing. In whitelist mode the toolbar button asks whether to add a site that isn't on it. The browser asks once to allow Cinema Guard on all sites.
+- Players embedded from another site, as on most film sites, are filtered as the site you are on says.
+- Fixed: on many film sites (such as popcornmovies.st) the sound was muted but the swear words still showed in the subtitles. Subtitles are now blanked wherever the player draws them: more players are known (Vidstack, ArtPlayer, DPlayer, xgplayer, Fluid Player, Kaltura, THEOplayer), elements named like captions over the video count too, and with a subtitle file any text that is part of the line being spoken is blanked, whatever draws it, also inside web components.
+- Subtitle files are recognised in more places, and the toolbar popup follows the film rather than an advert playing beside it.
+- Fixed: when a player started with subtitles in another language (often Arabic), Cinema Guard read those. Only subtitles in your caption language are read now, also files and tracks that don't say their language; switch the player to your language and filtering starts at once.
+- New setting for dubbed sound, under Captions: Stop muting when the subtitles aren't in my language. When you switch a film's subtitles to another language, muting pauses and the popup's detections clear, until you switch back. Off by default, since switching only the subtitles leaves the original sound, which is still muted.
+- Pages without a video are left alone: Cinema Guard only starts its work once a video turns up.
+- The popup shows "Muting now" the moment the sound goes and stops the moment it's back (it lagged by about half a second), in the status corner of the video card, so nothing below it moves.
+- A cleaner look for status tags in the popup and the options page.
+
 ## 1.0.4 — 11 November 2026
 
 - Fixed: in YouTube's new player, hidden captions looked the same as captions in view, so the CC button seemed on while nothing showed. The button is now dimmed and struck through while captions are kept on out of sight; press it (or C) to show them.

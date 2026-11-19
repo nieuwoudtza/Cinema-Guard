@@ -91,21 +91,27 @@
     const untestedSite = host => UNTESTED_SITES.find(site => host === site.host || host?.endsWith(`.${site.host}`)) || null;
     const reportLink = siteName => `https://github.com/nieuwoudtza/Cinema-Guard/issues/new?title=${encodeURIComponent(`${siteName}: how Cinema Guard did`)}`;
 
-    // Whether the extension runs on a page: built into the manifest, or a site the user turned on.
-    async function coverage(url) {
+    // The extension runs on every web page; other pages (the browser's own, files) it cannot reach.
+    function coverage(url) {
         if (!url) return { kind: 'unknown' };
         let parsed;
         try { parsed = new URL(url); } catch { return { kind: 'unsupported' }; }
         if (!/^https?:$/.test(parsed.protocol)) return { kind: 'unsupported' };
-
-        const host = parsed.hostname.replace(/^www\./, '');
-        const builtIn = chrome.runtime.getManifest().content_scripts[0].matches
-            .some(pattern => new RegExp('^' + pattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$').test(parsed.origin + parsed.pathname));
-        if (builtIn) return { kind: 'built-in', host, origin: parsed.origin };
-
-        const granted = await chrome.permissions.contains({ origins: [`${parsed.origin}/*`] });
-        return { kind: granted ? 'granted' : 'off', host, origin: parsed.origin };
+        return { kind: 'web', host: parsed.hostname.replace(/^www\./, ''), origin: parsed.origin };
     }
 
-    CG.ui = { el, icon, clock, duration, displayWord, MUTE_LABELS, plural, loadSettings, saveSettings, saveAllowChannels, coverage, UNTESTED_SITES, untestedSite, reportLink };
+    // The list the current mode uses.
+    const siteList = settings => settings.siteMode === 'whitelist' ? 'whitelist' : 'blacklist';
+
+    // Settings with the site added to a list, or with every entry that covers it taken off (a.example.com is covered
+    // by example.com), so it really is off the list afterwards.
+    function withSite(settings, list, host, add) {
+        const current = settings[list];
+        const next = add
+            ? (CG.settings.listed(current, host) ? current : [...current, host])
+            : current.filter(entry => !CG.settings.listed([entry], host));
+        return { ...settings, [list]: next };
+    }
+
+    CG.ui = { el, icon, clock, duration, displayWord, MUTE_LABELS, plural, loadSettings, saveSettings, saveAllowChannels, coverage, siteList, withSite, UNTESTED_SITES, untestedSite, reportLink };
 })();

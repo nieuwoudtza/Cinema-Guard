@@ -192,7 +192,12 @@
     // Returns { format, language, cues }; format is null when the text is not a caption file.
     function parse(body) {
         const text = (body || '').replace(/^\uFEFF/, '').replace(/^\)\]\}'/, '').trim();
-        const result = (format, cues, language = null) => ({ format, language, cues: cues.filter(cue => cue.end >= cue.start) });
+        const result = (format, cues, language = null) => {
+            cues = cues.filter(cue => cue.end >= cue.start);
+            // Players also use WebVTT for the thumbnails shown over the progress bar: each cue is a picture's address.
+            const pictures = cues.filter(cue => /\.(?:jpe?g|png|webp|gif)(?:[?#]|$)|#xywh=/i.test(cue.text.trim())).length;
+            return pictures > cues.length / 2 ? { format: null, language, cues: [] } : { format, language, cues };
+        };
 
         try {
             if (text.startsWith('{') && text.includes('"events"')) return result('json3', parseJson3(JSON.parse(text)));

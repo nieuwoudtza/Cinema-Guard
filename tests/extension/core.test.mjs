@@ -175,6 +175,29 @@ test('the spellings Petrus added by hand are matched', () => {
         assert.ok(matcher.find(matcher.formatCue(`Oh, ${word} that`), words).length > 0, `${word} is not matched`);
 });
 
+test('where to filter: blacklist or whitelist', () => {
+    assert.equal(defaults.siteMode, 'blacklist');
+    assert.deepEqual(defaults.whitelist, ['youtube.com']);
+    assert.deepEqual(['https://www.PopcornMovies.st/watch/movie/1', 'm.example.com', '*.foo.org', 'nonsense', ''].map(settings.siteHost),
+        ['popcornmovies.st', 'm.example.com', 'foo.org', '', '']);
+
+    // Sites paused before there were lists are the blacklist, in saved settings and in old backups.
+    assert.deepEqual(settings.normalise({ pausedSites: ['www.cinecat.eu'] }).blacklist, ['cinecat.eu']);
+    assert.deepEqual(settings.importSettings({ settings: { pausedSites: ['a.com'] } }, defaults).blacklist, ['a.com']);
+
+    const black = settings.normalise({ blacklist: ['example.com'] });
+    assert.ok(settings.siteOn(black, 'popcornmovies.st'));
+    assert.ok(!settings.siteOn(black, 'm.example.com'));
+    assert.ok(!settings.siteOn(black, 'example.com', 'vidsrc.to'), 'a player embedded on a blacklisted site');
+    assert.ok(settings.siteOn(black, 'notexample.com'));
+
+    const white = settings.normalise({ siteMode: 'whitelist', whitelist: ['popcornmovies.st'] });
+    assert.ok(settings.siteOn(white, 'popcornmovies.st', 'vidsrc.to'), 'a player embedded on a whitelisted site');
+    assert.ok(!settings.siteOn(white, 'cinecat.eu'));
+    assert.ok(!settings.siteOn(white));
+    assert.ok(settings.siteOn(settings.normalise({ siteMode: 'whitelist' }), 'other.com', 'youtube.com'), 'YouTube embeds');
+});
+
 test('blanking keeps the line length', () => {
     assert.equal(matcher.maskText('Shit. Fuck you, Jesus!', ['FUCK', 'JESUS'], '*'), 'Shit. **** you, *****!');
     assert.equal(matcher.maskText('holy shit', ['HOLY SHIT'], '#'), '#### ####');

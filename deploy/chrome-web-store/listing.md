@@ -7,9 +7,9 @@ Everything the developer dashboard asks for, ready to paste. Images are in `imag
 
 **Name:** Cinema Guard
 
-**Summary** (132 characters at most):
+**Summary** (132 characters at most; the store takes it from the manifest's `description`):
 
-> Mutes swearing in YouTube videos as it happens, using their captions. Choose your own words; nothing leaves your browser.
+> Mutes swearing in videos as they play, using their captions: YouTube and most other video sites. Your own word list.
 
 **Category:** Entertainment
 
@@ -17,7 +17,7 @@ Everything the developer dashboard asks for, ready to paste. Images are in `imag
 
 **Description:**
 
-> Cinema Guard mutes swearing in YouTube videos while you watch, so the whole family can enjoy them without the language.
+> Cinema Guard mutes swearing in videos while you watch, on YouTube and most film and video sites, so the whole family can enjoy them without the language.
 >
 > It reads a video's captions ahead of time, finds the words on your list and mutes just those moments. With YouTube's auto-generated captions every word has its own time, so only the word itself goes quiet. The sound fades out and back in over a few milliseconds, so a mute never clicks.
 >
@@ -27,17 +27,17 @@ Everything the developer dashboard asks for, ready to paste. Images are in `imag
 > • Blanks the filtered words in the captions on screen too, with a character of your choice.
 > • Marks on YouTube's progress bar show where a video will be muted.
 > • Works on videos, Shorts, and YouTube videos embedded on other sites.
-> • Leave channels you trust unfiltered, or pause it on a site.
+> • Leave channels you trust unfiltered. Filter everywhere except a blacklist of sites, or only on a whitelist.
 > • See what was found in the video you're watching, and jump straight to any of it.
 > • Statistics: how many words were muted, which ones, and in which videos.
 > • Alt+Shift+M turns filtering on or off from any tab.
 > • Your settings follow you to your other browsers through your browser's own sync.
 >
 > OTHER SITES
-> Cinema Guard can also run on other sites with captions or subtitles: open a video there, select Cinema Guard in the toolbar and choose Turn on. It reads the video's subtitle tracks, the subtitle files the player downloads, or the captions as they appear on screen.
+> Cinema Guard works on other sites with captions or subtitles too, including players embedded from another site. It reads the video's subtitle tracks, the subtitle files the player downloads, or the captions as they appear on screen, and blanks the words wherever the player draws its captions. Choose where it filters: everywhere except the sites on your blacklist, or only the sites on your whitelist.
 >
 > HELP WANTED: NETFLIX, PRIME VIDEO, DISNEY+, MAX AND HULU
-> Cinema Guard knows how these services deliver their subtitles, but they need paid accounts and nobody has been able to test them yet, so they are off by default. If you have one of these services and would like to help, open a video there, select Cinema Guard in the toolbar, choose "Try it anyway", and tell us how it went: https://github.com/nieuwoudtza/Cinema-Guard/issues
+> Cinema Guard knows how these services deliver their subtitles, but they need paid accounts and nobody has been able to test them yet. If you have one of these services and would like to help, play a video there and tell us how it went: https://github.com/nieuwoudtza/Cinema-Guard/issues
 >
 > PRIVATE BY DESIGN
 > No account, no tracking, no data sent anywhere. Captions are read and matched inside your browser.
@@ -64,17 +64,15 @@ The description is in `description.txt` as plain text, ready to paste.
 
 **Single purpose:**
 
-> Cinema Guard mutes swear words in online videos (YouTube, and other sites the user turns on), using the videos' captions, and blanks those words in the captions shown.
+> Cinema Guard mutes swear words in online videos (YouTube and other video sites), using the videos' captions, and blanks those words in the captions shown.
 
 **Permission justifications:**
 
 | Permission | Justification |
 |---|---|
 | `storage` | Keeps the user's word lists, settings, unfiltered channels and statistics in the browser. Settings use the browser's own sync storage so they follow the user to their other browsers. |
-| `scripting` | Runs Cinema Guard on sites outside YouTube that the user turns on themselves from the toolbar popup. Scripts are registered only for those sites. |
-| `activeTab` | Lets the toolbar popup see the address of the tab it was opened on, to show whether Cinema Guard runs there and offer to turn it on. |
-| Host permission: `youtube.com`, `youtube-nocookie.com` | Reads a video's captions to find the words to mute, mutes the video at those moments, blanks the words in the captions on screen, and marks the progress bar. Embedded YouTube players on other sites are covered by `youtube-nocookie.com` and `youtube.com/embed`. |
-| Optional host permissions (`https://*/*`, `http://*/*`) | Asked for one site at a time, only when the user chooses Turn on (or Try it anyway) in the popup on that site, so Cinema Guard can read its captions and mute its videos. Never requested otherwise. |
+| `scripting` | Removes the per-site scripts that versions before 1.0.5 registered for sites the user turned on one by one, now that the scripts run on every site. |
+| Host permissions (`https://*/*`, `http://*/*`) | Video players on film and video sites are often embedded from other sites, so Cinema Guard has to run wherever a video plays to find its captions. It reads the video's subtitles, mutes the video at the listed words and blanks them in the captions on screen. The user chooses where it filters (everywhere except a blacklist, or only on a whitelist); subtitles are read everywhere so a site starts filtering the moment it is allowed. Pages without a video are left alone, and nothing is ever sent anywhere. |
 
 **Remote code:** No, I am not using remote code. All code is in the package.
 
@@ -98,7 +96,7 @@ The page lives in the WaveBit Website project (`wwwroot/docs/software/cinemaguar
 >
 > Your word lists and settings are kept in your browser's storage. If you use your browser's sync, your browser syncs them to your other browsers through your browser account; WaveBit never sees them. Statistics (how many words were muted, and in which videos) stay on your computer and can be cleared at any time from the extension's Statistics page.
 >
-> Cinema Guard runs on YouTube, and on other sites only after you turn it on for them yourself.
+> Cinema Guard runs on the web pages you visit so it can find videos and their captions, which may be embedded from other sites. On pages without a video it does nothing. You choose where it filters: everywhere except the sites on your blacklist, or only the sites on your whitelist.
 >
 > Questions: https://github.com/nieuwoudtza/Cinema-Guard/issues
 
